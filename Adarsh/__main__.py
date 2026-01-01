@@ -52,11 +52,13 @@ async def start_services():
             load = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(load)
             sys.modules["Adarsh.bot.plugins." + plugin_name] = load
-            print("Imported => " + plugin_name)
-    if Var.ON_HEROKU:
-        print("------------------ Starting Keep Alive Service ------------------")
-        print()
-        asyncio.create_task(ping_server())
+    print("Imported => " + plugin_name)
+    
+    # Starting Keep Alive Service
+    print("------------------ Starting Keep Alive Service ------------------")
+    print()
+    asyncio.create_task(ping_server())
+    
     print('-------------------- Initalizing Web Server -------------------------')
     app = web.AppRunner(await web_server())
     await app.setup()
@@ -73,8 +75,7 @@ async def start_services():
     print('                        bot =>> {}'.format((await StreamBot.get_me()).first_name))
     print('                        server ip =>> {}:{}'.format(bind_address, Var.PORT))
     print('                        Owner =>> {}'.format((Var.OWNER_USERNAME)))
-    if Var.ON_HEROKU:
-        print('                        app runnng on =>> {}'.format(Var.FQDN))
+    print('                        app runnng on =>> {}'.format(Var.FQDN))
     print('---------------------------------------------------------------------------------------------------------')
     print('Give a star to my repo https://github.com/adarsh-goel/filestreambot-pro  also follow me for new bots')
     print('---------------------------------------------------------------------------------------------------------')
