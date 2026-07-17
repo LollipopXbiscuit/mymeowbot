@@ -52,7 +52,10 @@ async def group_tagger_handler(c: Client, m: Message):
         return
 
     # Track users in the group
-    await db.add_group_user(m.chat.id, m.from_user.id, m.from_user.username or m.from_user.first_name)
+    try:
+        await db.add_group_user(m.chat.id, m.from_user.id, m.from_user.username or m.from_user.first_name)
+    except Exception:
+        pass  # DB unavailable — skip tracking, don't crash the dispatcher
 
     # Initialize counter for the group
     if m.chat.id not in message_counters:
