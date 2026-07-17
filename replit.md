@@ -27,7 +27,7 @@ python -m Adarsh
 - `API_HASH` - Telegram API Hash (from my.telegram.org)
 - `BOT_TOKEN` - Telegram Bot Token (from @BotFather)
 - `BIN_CHANNEL` - Telegram channel ID for storing files
-- `DATABASE_URL` - MongoDB connection URL
+- `MONGODB_URL` - MongoDB connection URI (use this key, not DATABASE_URL, as DATABASE_URL is reserved by Replit)
 - `OWNER_USERNAME` - Bot owner's Telegram username
 
 ## Optional Environment Variables
