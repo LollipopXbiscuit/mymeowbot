@@ -1,5 +1,5 @@
 import random
-from pyrogram import filters
+from pyrogram import filters, enums
 from pyrogram.client import Client
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from Adarsh.bot import StreamBot
@@ -87,7 +87,7 @@ async def group_tagger_handler(c: Client, m: Message):
             '🤩',
             
         ]
-        await m.reply_text(random.choice(reminder_messages), parse_mode="html")
+        await m.reply_text(random.choice(reminder_messages), parse_mode=enums.ParseMode.HTML)
 
     # Check if we reached the random target
     if message_counters[m.chat.id]['count'] >= message_counters[m.chat.id]['target']:
@@ -124,7 +124,7 @@ async def ping_handler(bot, m: Message):
     start = time.time()
     reply = await m.reply_text("🏓 Pong!")
     elapsed = (time.time() - start) * 1000
-    await reply.edit_text(f"🏓 Pong!\n<b>Speed:</b> <code>{elapsed:.2f} ms</code>", parse_mode="html")
+    await reply.edit_text(f"🏓 Pong!\n<b>Speed:</b> <code>{elapsed:.2f} ms</code>", parse_mode=enums.ParseMode.HTML)
 
 @StreamBot.on_message(filters.command('stats') & filters.private)
 async def stats(bot, update):
