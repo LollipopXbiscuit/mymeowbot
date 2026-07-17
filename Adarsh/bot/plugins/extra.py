@@ -46,6 +46,7 @@ def get_readable_file_size(size_in_bytes) -> str:
 db = Database(Var.DATABASE_URL, Var.name)
 message_counters = {}
 
+
 @StreamBot.on_message(filters.group & ~filters.service)
 async def group_tagger_handler(c: Client, m: Message):
     if not m.from_user or m.from_user.is_bot:
@@ -119,14 +120,14 @@ async def group_tagger_handler(c: Client, m: Message):
         
         await m.reply_text(random.choice(messages))
 
-@StreamBot.on_message(filters.command('ping'))
+@StreamBot.on_message(filters.regex(r'^/ping(@\w+)?(\s|$)'), group=1)
 async def ping_handler(bot, m: Message):
     start = time.time()
     reply = await m.reply_text("🏓 Pong!")
     elapsed = (time.time() - start) * 1000
     await reply.edit_text(f"🏓 Pong!\n<b>Speed:</b> <code>{elapsed:.2f} ms</code>", parse_mode=enums.ParseMode.HTML)
 
-@StreamBot.on_message(filters.command('stats') & filters.private)
+@StreamBot.on_message(filters.command('stats') & filters.private, group=1)
 async def stats(bot, update):
   currentTime = readable_time(int(time.time() - StartTime))
   total, used, free = shutil.disk_usage('.')
