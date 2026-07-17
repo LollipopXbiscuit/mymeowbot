@@ -20,8 +20,12 @@ class Database:
         await self.col.insert_one(user)
         
     async def add_user_pass(self, id, ag_pass):
-        await self.add_user(int(id))
+        if not await self.is_user_exist(int(id)):
+            await self.add_user(int(id))
         await self.col.update_one({'id': int(id)}, {'$set': {'ag_p': ag_pass}})
+
+    async def delete_user(self, id):
+        await self.col.delete_one({'id': int(id)})
     
     async def get_user_pass(self, id):
         user_pass = await self.col.find_one({'id': int(id)})

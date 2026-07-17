@@ -66,16 +66,25 @@ async def group_tagger_handler(c: Client, m: Message):
     # Added: Specific reminder message every 30 messages
     if message_counters[m.chat.id]['count'] % 30 == 0:
         reminder_messages = [
-            "آرت نزدی کونگشاد @Gilgamesh_shah",
-            "بجای عشق بازی با شاگردت بیا به من توجه کن @Gilgamesh_shah",
-            "صدرای بیشعور @Gilgamesh_shah",
-            "عسل بانو خسته نباشی عزیزم",
-            "رزه بخورتت @crowsafe",
+            "آرت نزدید کونگشادا",
+            "@siln3c سلم خبی",
+            " عمه ات را خریدارم @Gilgamesh_shah",
+            "(ﾉ^ω^)ﾉﾟ عسل بانو خسته نباشی عزیزم",
+            "@im_nefer نفس من کیه؟ OWO",
             "@IM_NEMIDOONAM مامی فدات شه",
-            "@Im_jeager میدونم داری لاس میزنی",
-            "الو؟ سلام؟ شما خیلی سکسی هستید @nicol_ll5"
+            "@xnaixx بخورمتتتتتتتتتتتتتت زن OWO",
+            "(ﾉ^ω^)ﾉﾟ الو؟ سلام؟ شما خیلی سکسی هستید @nicol_ll5",
+            "بهم توجه کنید",
+            "(╯°□°）╯︵ (﻿ .o.)انگول کنید منو دیگه چند ساعته هیچی اپلود نکردم اههههههههههههههههههههههههههه",
+            "کسی کمک نمیخواد؟ -w-",
+            "@Aysariy چرا انقدر بهم بی محلی میکنی (T_T)",
+            "میشه لطفا از منم ارت بزنیدددددددددددددددددد یه پیشی گوکولی لطفاااااااااااااااااااااا",
+            "-_- خواهرم بهم بی محلی میکنه @waifuscollectorbot",
+            '🤩',
+            '🤩',
+            
         ]
-        await m.reply_text(random.choice(reminder_messages))
+        await m.reply_text(random.choice(reminder_messages), parse_mode="html")
 
     # Check if we reached the random target
     if message_counters[m.chat.id]['count'] >= message_counters[m.chat.id]['target']:
