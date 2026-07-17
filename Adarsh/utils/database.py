@@ -58,6 +58,24 @@ class Database:
             return doc
         return None
 
+    async def add_group_message(self, group_id, text):
+        """Store a member's message text for the echo-reply feature (capped at 500 per group)."""
+        col = self.db[f"msgs_{group_id}"]
+        await col.insert_one({'text': text})
+        # Keep only the most recent 500 messages
+        count = await col.count_documents({})
+        if count > 500:
+            oldest = await col.find_one(sort=[('_id', 1)])
+            if oldest:
+                await col.delete_one({'_id': oldest['_id']})
+
+    async def get_random_group_message(self, group_id):
+        """Return a random stored message text, or None if none stored."""
+        col = self.db[f"msgs_{group_id}"]
+        async for doc in col.aggregate([{'$sample': {'size': 1}}]):
+            return doc.get('text')
+        return None
+
     async def add_file(self, file_info):
         return await self.db.files.insert_one(file_info)
 

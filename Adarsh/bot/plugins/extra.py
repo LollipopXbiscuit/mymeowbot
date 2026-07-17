@@ -46,11 +46,36 @@ def get_readable_file_size(size_in_bytes) -> str:
 db = Database(Var.DATABASE_URL, Var.name)
 message_counters = {}
 
+# In-memory message store per group: {chat_id: [text, ...]} — fallback when DB is unavailable
+_group_msg_cache: dict = {}
+_MAX_CACHE = 300  # max messages kept per group in memory
+
+
+def _cache_message(chat_id: int, text: str):
+    """Store a message text in the in-memory cache (bounded)."""
+    bucket = _group_msg_cache.setdefault(chat_id, [])
+    bucket.append(text)
+    if len(bucket) > _MAX_CACHE:
+        bucket.pop(0)
+
+
+def _random_cached_message(chat_id: int):
+    bucket = _group_msg_cache.get(chat_id, [])
+    return random.choice(bucket) if bucket else None
+
 
 @StreamBot.on_message(filters.group & ~filters.service)
 async def group_tagger_handler(c: Client, m: Message):
     if not m.from_user or m.from_user.is_bot:
         return
+
+    # Store non-command text for the echo-reply feature
+    if m.text and not m.text.startswith('/') and len(m.text.strip()) > 1:
+        _cache_message(m.chat.id, m.text)
+        try:
+            await db.add_group_message(m.chat.id, m.text)
+        except Exception:
+            pass
 
     # Track users in the group
     try:
@@ -119,6 +144,33 @@ async def group_tagger_handler(c: Client, m: Message):
         ]
         
         await m.reply_text(random.choice(messages))
+
+@StreamBot.on_message(filters.group & filters.reply, group=1)
+async def echo_bot_reply_handler(c: Client, m: Message):
+    """When a group member replies to any bot message, echo a random past member message."""
+    replied = m.reply_to_message
+    if not replied or not replied.from_user:
+        return
+    # Only fire when the reply is directed at this bot
+    bot_id = c.me.id if c.me else None
+    if bot_id is None or replied.from_user.id != bot_id:
+        return
+    # Don't respond to other bots replying to us
+    if m.from_user and m.from_user.is_bot:
+        return
+
+    # Try DB first, fall back to in-memory cache
+    msg_text = None
+    try:
+        msg_text = await db.get_random_group_message(m.chat.id)
+    except Exception:
+        pass
+    if not msg_text:
+        msg_text = _random_cached_message(m.chat.id)
+
+    if msg_text:
+        await m.reply_text(msg_text)
+
 
 @StreamBot.on_message(filters.regex(r'^/ping(@\w+)?(\s|$)'), group=1)
 async def ping_handler(bot, m: Message):
