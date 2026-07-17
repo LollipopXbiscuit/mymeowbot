@@ -63,8 +63,8 @@ async def group_tagger_handler(c: Client, m: Message):
 
     message_counters[m.chat.id]['count'] += 1
 
-    # Added: Specific reminder message every 30 messages
-    if message_counters[m.chat.id]['count'] % 30 == 0:
+    # Added: Specific reminder message every 10 messages
+    if message_counters[m.chat.id]['count'] % 10 == 0:
         reminder_messages = [
             "آرت نزدید کونگشادا",
             "@siln3c سلم خبی",
@@ -115,6 +115,13 @@ async def group_tagger_handler(c: Client, m: Message):
         ]
         
         await m.reply_text(random.choice(messages))
+
+@StreamBot.on_message(filters.command('ping'))
+async def ping_handler(bot, m: Message):
+    start = time.time()
+    reply = await m.reply_text("🏓 Pong!")
+    elapsed = (time.time() - start) * 1000
+    await reply.edit_text(f"🏓 Pong!\n<b>Speed:</b> <code>{elapsed:.2f} ms</code>", parse_mode="html")
 
 @StreamBot.on_message(filters.command('stats') & filters.private)
 async def stats(bot, update):
