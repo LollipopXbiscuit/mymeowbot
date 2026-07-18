@@ -132,15 +132,8 @@ async def group_tagger_handler(c: Client, m: Message):
             return
 
         user_id = random_user['id']
-        username_val = random_user.get('username')
-        
-        # Format the mention properly
-        if username_val and not username_val.replace('_', '').isalnum(): # Check if it's a real username
-             mention = f"@{username_val}"
-        elif username_val:
-             mention = f"@{username_val}"
-        else:
-             mention = f"[{random_user.get('first_name', 'User')}](tg://user?id={user_id})"
+        display = random_user.get('username') or random_user.get('first_name') or 'User'
+        mention = f"[{display}](tg://user?id={user_id})"
         
         tag_msg = build_tag(user_id, mention)
         await m.reply_text(tag_msg)
