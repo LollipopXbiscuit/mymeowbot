@@ -92,6 +92,27 @@ class Database:
             doc.pop('_id', None)
         return doc
 
+    # ── Allowed groups allowlist ──────────────────────────────────────────────
+
+    async def add_allowed_group(self, group_id: int):
+        await self.db.allowed_groups.update_one(
+            {'group_id': int(group_id)},
+            {'$set': {'group_id': int(group_id)}},
+            upsert=True,
+        )
+
+    async def remove_allowed_group(self, group_id: int):
+        await self.db.allowed_groups.delete_one({'group_id': int(group_id)})
+
+    async def is_group_allowed(self, group_id: int) -> bool:
+        doc = await self.db.allowed_groups.find_one({'group_id': int(group_id)})
+        return doc is not None
+
+    async def get_allowed_groups(self) -> list:
+        return [doc['group_id'] async for doc in self.db.allowed_groups.find({})]
+
+    # ── Files ─────────────────────────────────────────────────────────────────
+
     async def add_file(self, file_info):
         return await self.db.files.insert_one(file_info)
 
