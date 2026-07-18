@@ -147,7 +147,8 @@ async def group_tagger_handler(c: Client, m: Message):
 
 @StreamBot.on_message(filters.group & filters.reply, group=1)
 async def echo_bot_reply_handler(c: Client, m: Message):
-    """When a group member replies to a bot message, respond with AI using their profile."""
+    """When a group member replies to a bot message, repeat a past member message
+    verbatim (70 % of the time) or fall back to a memory-based reply."""
     replied = m.reply_to_message
     if not replied or not replied.from_user:
         return
@@ -157,10 +158,17 @@ async def echo_bot_reply_handler(c: Client, m: Message):
     if m.from_user and m.from_user.is_bot:
         return
 
-    # Use whatever text/caption they sent; fall back to a nudge if it's media
-    user_text = m.text or m.caption or ""
-    reply = build_reply(m.from_user.id, user_text)
-    await m.reply_text(reply)
+    # 70 % chance: copy-paste a random past member message verbatim
+    pool = _group_msg_cache.get(m.chat.id, [])
+    if pool and random.random() < 0.70:
+        # Pick from the pool but avoid repeating what the user just said
+        user_text = (m.text or m.caption or "").strip()
+        candidates = [msg for msg in pool if msg.strip() != user_text]
+        chosen = random.choice(candidates) if candidates else random.choice(pool)
+        await m.reply_text(chosen)
+    else:
+        user_text = m.text or m.caption or ""
+        await m.reply_text(build_reply(m.from_user.id, user_text))
 
 
 @StreamBot.on_message(filters.regex(r'^/ping(@\w+)?(\s|$)'), group=1)
