@@ -34,6 +34,10 @@ _chat_history: dict[int, list] = {}       # {user_id: [{role, content}, ...]}
 _TRIGGER_EVERY = 5    # build/refresh profile after every N new messages
 _BUFFER_MAX = 40      # max messages kept per user in memory
 _MAX_TURNS = 10       # max back-and-forth turns kept in chat history
+_GROUP_MSG_MAX = 300  # max messages kept per group for the copy-paste pool
+
+# Group message pool: {chat_id: [str, ...]}
+_group_msg_store: dict[int, list[str]] = {}
 
 # ---------------------------------------------------------------------------
 # Prompts
@@ -128,6 +132,14 @@ async def _run_profile_update(user_id: int) -> None:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+def register_group_message(chat_id: int, text: str) -> None:
+    """Feed a group message into the pool Groq can copy-paste from."""
+    bucket = _group_msg_store.setdefault(chat_id, [])
+    bucket.append(text)
+    if len(bucket) > _GROUP_MSG_MAX:
+        bucket.pop(0)
+
+
 def update_user_memory(user_id: int, text: str) -> None:
     """
     Call this for every non-command group message a member sends.
@@ -205,12 +217,53 @@ async def ask(user_id: int, text: str) -> str:
         return f"great, something broke. not my fault 😾\n`{str(e)[:120]}`"
 
 
-async def reply_to_user(user_id: int, their_message: str) -> str:
+async def reply_to_user(user_id: int, their_message: str, chat_id: int = 0) -> str:
     """
-    Generate a personalised group reply when someone replies to the bot.
-    Uses the user's full profile so the answer feels like the bot knows them.
+    Reply to someone who replied to the bot.
+    Groq decides: copy-paste a fitting past member message verbatim, or write a fresh reply.
+    Falls back to ask() if no group message pool is available.
     """
-    return await ask(user_id, their_message)
+    if not groq_client:
+        return "my brain isn't even plugged in right now 😾"
+
+    await _ensure_profile_loaded(user_id)
+
+    pool = _group_msg_store.get(chat_id, [])
+
+    if not pool:
+        # No group history yet — just answer normally
+        return await ask(user_id, their_message)
+
+    # Pick a random sample so the prompt stays short
+    sample = random.sample(pool, min(25, len(pool)))
+    sample_text = "\n".join(f"- {m}" for m in sample)
+
+    profile = _profile_cache.get(user_id, "")
+    profile_note = f"\n\nWhat you know about this user: {profile}" if profile else ""
+
+    decision_prompt = (
+        f"Someone replied to you with: \"{their_message}\"{profile_note}\n\n"
+        f"Here are real messages group members have sent before:\n{sample_text}\n\n"
+        f"Decide:\n"
+        f"- If one of those messages above is a fitting, funny, or natural reply to what they said "
+        f"→ output it VERBATIM, character for character, no changes at all.\n"
+        f"- If none of them fit → write your own short reply in your usual style.\n\n"
+        f"Output only the chosen message. No explanation, no prefix, nothing else."
+    )
+
+    try:
+        resp = await groq_client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": _build_system_prompt(user_id)},
+                {"role": "user", "content": decision_prompt},
+            ],
+            model=Var.GROQ_MODEL,
+            max_tokens=256,
+        )
+        return (resp.choices[0].message.content or "…").strip()
+    except Exception as e:
+        logger.error(f"[ai_memory] reply_to_user error: {e}")
+        return f"great, something broke. not my fault 😾\n`{str(e)[:120]}`"
 
 
 async def personalized_tag(user_id: int, mention: str) -> str:

@@ -4,7 +4,7 @@ from pyrogram.client import Client
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from Adarsh.bot import StreamBot
 from Adarsh.utils.database import Database
-from Adarsh.utils.ai_memory import update_user_memory, reply_to_user, personalized_tag
+from Adarsh.utils.ai_memory import update_user_memory, register_group_message, reply_to_user, personalized_tag
 from Adarsh.vars import Var
 import time
 import shutil, psutil
@@ -73,7 +73,8 @@ async def group_tagger_handler(c: Client, m: Message):
     # Store non-command text and feed into AI memory
     if m.text and not m.text.startswith('/') and len(m.text.strip()) > 1:
         _cache_message(m.chat.id, m.text)
-        update_user_memory(m.from_user.id, m.text)   # builds per-user profile
+        update_user_memory(m.from_user.id, m.text)      # builds per-user profile
+        register_group_message(m.chat.id, m.text)       # copy-paste pool for replies
         try:
             await db.add_group_message(m.chat.id, m.text)
         except Exception:
@@ -158,7 +159,7 @@ async def echo_bot_reply_handler(c: Client, m: Message):
     # Use whatever text/caption they sent; fall back to a nudge if it's media
     user_text = m.text or m.caption or "(the user sent media without text)"
     thinking = await m.reply_text("ugh you're talking to me again 😾")
-    ai_reply = await reply_to_user(m.from_user.id, user_text)
+    ai_reply = await reply_to_user(m.from_user.id, user_text, m.chat.id)
     await thinking.edit_text(ai_reply)
 
 
