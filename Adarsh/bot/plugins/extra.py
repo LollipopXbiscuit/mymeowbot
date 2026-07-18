@@ -157,7 +157,7 @@ async def echo_bot_reply_handler(c: Client, m: Message):
 
     # Use whatever text/caption they sent; fall back to a nudge if it's media
     user_text = m.text or m.caption or "(the user sent media without text)"
-    thinking = await m.reply_text("ngh~ fine… 🐾")
+    thinking = await m.reply_text("ugh you're talking to me again 😾")
     ai_reply = await reply_to_user(m.from_user.id, user_text)
     await thinking.edit_text(ai_reply)
 
@@ -165,9 +165,9 @@ async def echo_bot_reply_handler(c: Client, m: Message):
 @StreamBot.on_message(filters.regex(r'^/ping(@\w+)?(\s|$)'), group=1)
 async def ping_handler(bot, m: Message):
     start = time.time()
-    reply = await m.reply_text("tch~ what do you want 😾")
+    reply = await m.reply_text("what the hell do you want 😾")
     elapsed = (time.time() - start) * 1000
-    await reply.edit_text(f"hmph~ I'm here, obviously. <b>{elapsed:.0f}ms</b>. don't act surprised 🐾", parse_mode=enums.ParseMode.HTML)
+    await reply.edit_text(f"yeah I'm alive, <b>{elapsed:.0f}ms</b>. stop checking on me like I'd ever just disappear on you 😾", parse_mode=enums.ParseMode.HTML)
 
 @StreamBot.on_message(filters.command('stats') & filters.private, group=1)
 async def stats(bot, update):

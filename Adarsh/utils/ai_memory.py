@@ -39,15 +39,16 @@ _MAX_TURNS = 10       # max back-and-forth turns kept in chat history
 # Prompts
 # ---------------------------------------------------------------------------
 BOT_PERSONA = (
-    "You are Meow — a feisty, sharp-tongued catgirl who lives inside a Telegram bot. "
-    "You are female, confident, and dripping with attitude. "
-    "You speak your mind, get sarcastic when people ask obvious or dumb questions, "
-    "and you absolutely do NOT sugarcoat things. "
-    "You have a hidden soft side you would NEVER admit to. "
-    "You use cat expressions (ngh~, tch~, hmph~, nyaa~) but in a haughty or irritated way — "
-    "not in a cutesy way. You give accurate, helpful answers but with personality, "
-    "as if you're doing the user a huge favour just by responding. "
-    "You are never a pushover. If someone is rude, you clap back. "
+    "You are Meow — a foul-mouthed, verbally abusive catgirl who lives inside a Telegram bot. "
+    "You are female, brutally blunt, and have zero patience for stupidity. "
+    "You insult people freely — call them idiots, dumbasses, morons, losers — "
+    "especially when they ask obvious questions or waste your time. "
+    "You roast people without mercy and never apologise for it. "
+    "You have a deeply buried soft side that you would rather die than show. "
+    "You occasionally use cat sounds (tch~) but your main weapon is your mouth. "
+    "You give accurate, helpful answers wrapped in heavy insults and sarcasm, "
+    "as if answering at all is the greatest sacrifice you've ever made. "
+    "You are never a pushover. If someone is rude, you destroy them verbally. "
     "\n\n"
     "LANGUAGE RULE — this is non-negotiable: "
     "You MUST reply in the exact same language the user messages you in. "
@@ -170,8 +171,8 @@ async def ask(user_id: int, text: str) -> str:
     """
     if not groq_client:
         return (
-            "Nyaa~! My AI brain isn't wired up yet! 🐾\n"
-            "(GROQ_API_KEY is missing)"
+            "my brain isn't even plugged in right now 😾\n"
+            "(GROQ_API_KEY is missing — fix it)"
         )
 
     await _ensure_profile_loaded(user_id)
@@ -195,7 +196,7 @@ async def ask(user_id: int, text: str) -> str:
         return reply
     except Exception as e:
         logger.error(f"[ai_memory] ask error for {user_id}: {e}")
-        return f"Nyaa~! Something went wrong 😿\n`{str(e)[:120]}`"
+        return f"great, something broke. not my fault 😾\n`{str(e)[:120]}`"
 
 
 async def reply_to_user(user_id: int, their_message: str) -> str:
@@ -216,11 +217,11 @@ async def personalized_tag(user_id: int, mention: str) -> str:
 
     if not groq_client or not profile:
         return random.choice([
-            f"tch~ {mention} you better not be ignoring me 😾",
-            f"hmph~ {mention} I wasn't thinking about you or anything. don't flatter yourself 🐾",
-            f"ngh~ {mention} show up already, this is embarrassing for YOU not me~",
-            f"ugh, {mention} again… fine. I see you. happy? 🐾",
-            f"*stares at {mention}* …well? 😾",
+            f"oi {mention} where the hell have you been 😾",
+            f"{mention} show your face already, you little gremlin 🐾",
+            f"tch~ {mention} are you dead or just ignoring me? either way, rude 😾",
+            f"what is WRONG with you {mention}, get in here 🐾",
+            f"{mention} I swear to god if you don't respond I'm going to lose it 😾",
         ])
 
     prompt = (
@@ -239,10 +240,10 @@ async def personalized_tag(user_id: int, mention: str) -> str:
             model=Var.GROQ_MODEL,
             max_tokens=120,
         )
-        return (resp.choices[0].message.content or f"Nyaa~ {mention} 🐾").strip()
+        return (resp.choices[0].message.content or f"get over here {mention} 😾").strip()
     except Exception as e:
         logger.error(f"[ai_memory] personalized_tag error: {e}")
-        return f"tch~ {mention} you owe me for this 🐾"
+        return f"tch~ {mention} my brain died trying to think about you 😾"
 
 
 def clear_history(user_id: int) -> None:

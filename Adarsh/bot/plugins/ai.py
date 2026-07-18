@@ -17,13 +17,13 @@ logger = logging.getLogger(__name__)
 async def ai_command_handler(c: Client, m: Message):
     if not m.command or len(m.command) < 2:
         await m.reply_text(
-            "tch~ you forgot to actually say something.\n"
-            "Usage: `/ai <your question>` — and make it worth my time 😾",
+            "are you serious right now? you called me with NOTHING? 😾\n"
+            "Usage: `/ai <your question>` — and make it actually worth my time.",
             parse_mode=enums.ParseMode.MARKDOWN,
         )
         return
     query = " ".join(m.command[1:])
-    thinking = await m.reply_text("ngh~ fine, I'll think about it… 🐾")
+    thinking = await m.reply_text("ugh, fine. give me a second you impatient little— 😾")
     reply = await ask(m.from_user.id, query)
     await thinking.edit_text(reply)
 
@@ -34,7 +34,7 @@ async def ai_command_handler(c: Client, m: Message):
 @StreamBot.on_message(filters.command("clearai"), group=1)
 async def clear_ai_handler(c: Client, m: Message):
     clear_history(m.from_user.id)
-    await m.reply_text("hmph~ fine. I've wiped our conversation. 🐾\nDon't think I'm doing this because I care. Your profile stays.")
+    await m.reply_text("done. deleted. I don't remember you and honestly that's a gift to myself 😾\n(your profile stays, not that you deserve it)")
 
 
 # ---------------------------------------------------------------------------
@@ -44,6 +44,6 @@ async def clear_ai_handler(c: Client, m: Message):
 async def ai_private_handler(c: Client, m: Message):
     if m.text and m.text.startswith("/"):
         return
-    thinking = await m.reply_text("ugh, hold on… 🐾")
+    thinking = await m.reply_text("oh great, another message. hold on 😾")
     reply = await ask(m.from_user.id, m.text)
     await thinking.edit_text(reply)
