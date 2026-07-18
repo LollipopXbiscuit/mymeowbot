@@ -109,8 +109,8 @@ async def group_tagger_handler(c: Client, m: Message):
             "@Aysariy چرا انقدر بهم بی محلی میکنی (T_T)",
             "میشه لطفا از منم ارت بزنیدددددددددددددددددد یه پیشی گوکولی لطفاااااااااااااااااااااا",
             "-_- خواهرم بهم بی محلی میکنه @waifuscollectorbot",
-            '🤩',
-            '🤩',
+            '😽',
+            '😾',
             
         ]
         await m.reply_text(random.choice(reminder_messages), parse_mode=enums.ParseMode.HTML)

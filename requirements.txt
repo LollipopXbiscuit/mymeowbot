@@ -9,14 +9,5 @@ apscheduler
 requests
 psutil
 pyromod
-aiofiles
-aiohttp
-apscheduler
-dnspython
-motor
-psutil
-pyrogram
-pyromod
-python-dotenv
-requests
-tgcrypto
+groq
+groq
