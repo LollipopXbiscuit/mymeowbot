@@ -47,3 +47,5 @@ class Var(object):
     BANNED_CHANNELS = list(set(int(x) for x in str(getenv("BANNED_CHANNELS", "-1001362659779")).split() if x))
     GROQ_API_KEY = str(getenv('GROQ_API_KEY', ''))
     GROQ_MODEL = str(getenv('GROQ_MODEL', 'llama-3.3-70b-versatile'))
+    DEEPSEEK_API_KEY = str(getenv('DEEPSEEK_API_KEY', ''))
+    DEEPSEEK_MODEL = str(getenv('DEEPSEEK_MODEL', 'deepseek-chat'))

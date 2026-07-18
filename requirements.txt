@@ -23,3 +23,4 @@ pyromod
 python-dotenv
 requests
 tgcrypto
+openai

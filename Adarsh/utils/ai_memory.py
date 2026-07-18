@@ -1,4 +1,4 @@
-# AI memory — Groq-powered user profiling and personalised replies
+# AI memory — DeepSeek-powered user profiling and personalised replies
 # No Pyrogram imports here; safe to use from any plugin or utility.
 
 import asyncio
@@ -10,16 +10,29 @@ from Adarsh.utils.database import Database
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Groq client (one shared instance for the whole process)
+# AI client (DeepSeek preferred, falls back to Groq if no DeepSeek key)
 # ---------------------------------------------------------------------------
 try:
-    from groq import AsyncGroq
-    groq_client: "AsyncGroq | None" = (
-        AsyncGroq(api_key=Var.GROQ_API_KEY) if Var.GROQ_API_KEY else None
-    )
+    from openai import AsyncOpenAI
+    if Var.DEEPSEEK_API_KEY:
+        groq_client = AsyncOpenAI(
+            api_key=Var.DEEPSEEK_API_KEY,
+            base_url="https://api.deepseek.com",
+        )
+        _ai_model = Var.DEEPSEEK_MODEL
+        logger.info("AI backend: DeepSeek")
+    elif Var.GROQ_API_KEY:
+        from groq import AsyncGroq
+        groq_client = AsyncGroq(api_key=Var.GROQ_API_KEY)
+        _ai_model = Var.GROQ_MODEL  # keep using Groq model name for fallback
+        logger.info("AI backend: Groq (fallback)")
+    else:
+        groq_client = None
+        _ai_model = ""
 except Exception as _e:
-    logger.warning(f"Groq init failed: {_e}")
+    logger.warning(f"AI client init failed: {_e}")
     groq_client = None
+    _ai_model = ""
 
 _db = Database(Var.DATABASE_URL, Var.name)
 
@@ -115,7 +128,7 @@ async def _run_profile_update(user_id: int) -> None:
         )
         resp = await groq_client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
-            model=Var.GROQ_MODEL,
+            model=_ai_model,
             max_tokens=300,
         )
         new_profile = (resp.choices[0].message.content or "").strip()
@@ -207,7 +220,7 @@ async def ask(user_id: int, text: str) -> str:
     try:
         resp = await groq_client.chat.completions.create(
             messages=messages,
-            model=Var.GROQ_MODEL,
+            model=_ai_model,
             max_tokens=1024,
         )
         reply = (resp.choices[0].message.content or "…").strip()
@@ -260,7 +273,7 @@ async def reply_to_user(user_id: int, their_message: str, chat_id: int = 0) -> s
                 {"role": "system", "content": _build_system_prompt(user_id)},
                 {"role": "user", "content": decision_prompt},
             ],
-            model=Var.GROQ_MODEL,
+            model=_ai_model,
             max_tokens=256,
         )
         return (resp.choices[0].message.content or "…").strip()
@@ -299,7 +312,7 @@ async def personalized_tag(user_id: int, mention: str) -> str:
                 {"role": "system", "content": BOT_PERSONA},
                 {"role": "user", "content": prompt},
             ],
-            model=Var.GROQ_MODEL,
+            model=_ai_model,
             max_tokens=120,
         )
         return (resp.choices[0].message.content or f"get over here {mention} 😾").strip()
