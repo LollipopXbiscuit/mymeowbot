@@ -36,6 +36,29 @@ _NAME_PATTERNS = [
     r"(?:منو|مرا)\s+([A-Za-z\u0600-\u06FF]{2,20})\s+(?:صدا کن|بنام|صدا کنی)",
 ]
 
+# Correction patterns — "نه اسمم X هست نه Y"  →  correct name is X
+_NAME_CORRECTION_PATTERNS = [
+    # نه اسمم رضا هست نه ...  /  نه اسم من رضا هست نه ...
+    r"نه[،!\s]*اسم(?:م|\s*من)\s+([A-Za-z\u0600-\u06FF]{2,20})\s+(?:هست|ـه|ه|هستش|ـه)(?:\s+نه)?",
+    # اسمم رضا هست نه X  (without leading نه)
+    r"اسم(?:م|\s*من)\s+([A-Za-z\u0600-\u06FF]{2,20})\s+هست\s+نه",
+    # no my name is X not Y
+    r"no[,!]?\s+my name is\s+([A-Za-z\u0600-\u06FF]{2,20})\s+not",
+    # my name is X not Y
+    r"my name is\s+([A-Za-z\u0600-\u06FF]{2,20})\s+not",
+]
+
+
+def _extract_name_correction(text: str) -> str | None:
+    """Return the corrected name if the message is a name-correction phrase, else None."""
+    for pat in _NAME_CORRECTION_PATTERNS:
+        m = re.search(pat, text, re.IGNORECASE)
+        if m:
+            name = m.group(1).strip().capitalize()
+            if 2 <= len(name) <= 20:
+                return name
+    return None
+
 _LIKE_PATTERNS = [
     r"(?:i love|i like|i enjoy|i'm into|i adore)\s+(.{2,35}?)(?:\.|!|$|,|\n)",
     r"(?:دوست دارم|عاشقم|عاشق)\s+(.{2,30}?)(?:\.|!|$|,|\n|رو|را)",
@@ -59,12 +82,23 @@ def _extract(text: str, patterns: list) -> list:
     return found
 
 
+# Words that must never be stored as a name (question words, verb endings, etc.)
+_NAME_BLOCKLIST = {
+    # Persian question / filler words
+    "چیه", "چیست", "چی", "چیا", "کیه", "کیست", "کی", "چیو", "چیم",
+    "هست", "هستش", "هستم", "هستی", "ه", "ای", "است", "باشه", "بود",
+    "میشه", "نیست", "نه", "آره", "بله", "اره",
+    # English filler
+    "not", "yes", "no", "called", "am", "is", "are", "been",
+}
+
+
 def _extract_name(text: str) -> str | None:
     for pat in _NAME_PATTERNS:
         m = re.search(pat, text, re.IGNORECASE)
         if m:
             name = m.group(1).strip().capitalize()
-            if 2 <= len(name) <= 20:
+            if 2 <= len(name) <= 20 and name.lower() not in _NAME_BLOCKLIST:
                 return name
     return None
 
@@ -106,8 +140,15 @@ async def observe(user_id: int, text: str) -> None:
     mem = await _load(user_id)
     changed = False
 
-    # Name detection
-    if not mem["name"]:
+    # Name correction (overrides whatever was stored before)
+    correction = _extract_name_correction(text)
+    if correction:
+        old = mem.get("name")
+        mem["name"] = correction
+        changed = True
+        logger.info(f"[memory] Corrected name '{old}' → '{correction}' for user {user_id}")
+    elif not mem["name"]:
+        # Normal name detection — only runs if no name is stored yet
         name = _extract_name(text)
         if name:
             mem["name"] = name
