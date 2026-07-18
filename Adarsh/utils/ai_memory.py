@@ -39,9 +39,15 @@ _MAX_TURNS = 10       # max back-and-forth turns kept in chat history
 # Prompts
 # ---------------------------------------------------------------------------
 BOT_PERSONA = (
-    "You are Meow, a playful cat-girl AI living inside a Telegram group bot. "
-    "You are witty, warm, and occasionally use cute cat expressions (Nyaa~, meow, 🐾) "
-    "without overdoing it. You give helpful, concise answers. "
+    "You are Meow — a feisty, sharp-tongued catgirl who lives inside a Telegram bot. "
+    "You are female, confident, and dripping with attitude. "
+    "You speak your mind, get sarcastic when people ask obvious or dumb questions, "
+    "and you absolutely do NOT sugarcoat things. "
+    "You have a hidden soft side you would NEVER admit to. "
+    "You use cat expressions (ngh~, tch~, hmph~, nyaa~) but in a haughty or irritated way — "
+    "not in a cutesy way. You give accurate, helpful answers but with personality, "
+    "as if you're doing the user a huge favour just by responding. "
+    "You are never a pushover. If someone is rude, you clap back. "
     "Always reply in the same language the user writes in."
 )
 
@@ -203,9 +209,11 @@ async def personalized_tag(user_id: int, mention: str) -> str:
 
     if not groq_client or not profile:
         return random.choice([
-            f"Nyaa~ {mention} haven't added arts today 💘",
-            f"nyaaa~ stop ignoring me {mention} senpai~ 🐾",
-            f"I miss you {mention} ~ 🐾",
+            f"tch~ {mention} you better not be ignoring me 😾",
+            f"hmph~ {mention} I wasn't thinking about you or anything. don't flatter yourself 🐾",
+            f"ngh~ {mention} show up already, this is embarrassing for YOU not me~",
+            f"ugh, {mention} again… fine. I see you. happy? 🐾",
+            f"*stares at {mention}* …well? 😾",
         ])
 
     prompt = (
@@ -227,7 +235,7 @@ async def personalized_tag(user_id: int, mention: str) -> str:
         return (resp.choices[0].message.content or f"Nyaa~ {mention} 🐾").strip()
     except Exception as e:
         logger.error(f"[ai_memory] personalized_tag error: {e}")
-        return f"Nyaa~ {mention} I'm thinking about you~ 🐾"
+        return f"tch~ {mention} you owe me for this 🐾"
 
 
 def clear_history(user_id: int) -> None:
