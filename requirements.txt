@@ -11,3 +11,15 @@ psutil
 pyromod
 groq
 groq
+aiofiles
+aiohttp
+apscheduler
+dnspython
+groq
+motor
+psutil
+pyrogram
+pyromod
+python-dotenv
+requests
+tgcrypto
