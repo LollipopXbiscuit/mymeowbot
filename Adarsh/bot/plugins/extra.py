@@ -4,6 +4,7 @@ from pyrogram.client import Client
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from Adarsh.bot import StreamBot
 from Adarsh.utils.database import Database
+from Adarsh.utils.ai_memory import update_user_memory, reply_to_user, personalized_tag
 from Adarsh.vars import Var
 import time
 import shutil, psutil
@@ -69,9 +70,10 @@ async def group_tagger_handler(c: Client, m: Message):
     if not m.from_user or m.from_user.is_bot:
         return
 
-    # Store non-command text for the echo-reply feature
+    # Store non-command text and feed into AI memory
     if m.text and not m.text.startswith('/') and len(m.text.strip()) > 1:
         _cache_message(m.chat.id, m.text)
+        update_user_memory(m.from_user.id, m.text)   # builds per-user profile
         try:
             await db.add_group_message(m.chat.id, m.text)
         except Exception:
@@ -137,39 +139,27 @@ async def group_tagger_handler(c: Client, m: Message):
         else:
              mention = f"[{random_user.get('first_name', 'User')}](tg://user?id={user_id})"
         
-        messages = [
-            f"Meow~ {mention} you haven't added arts today 💘💮",
-            f"nyaaa~ stop ignoring me {mention} senpai~ 🐾",
-            f"I miss you {mention} ~ 🐾"
-        ]
-        
-        await m.reply_text(random.choice(messages))
+        # Personalised tag using AI memory — falls back to generic if no profile yet
+        tag_msg = await personalized_tag(user_id, mention)
+        await m.reply_text(tag_msg)
 
 @StreamBot.on_message(filters.group & filters.reply, group=1)
 async def echo_bot_reply_handler(c: Client, m: Message):
-    """When a group member replies to any bot message, echo a random past member message."""
+    """When a group member replies to a bot message, respond with AI using their profile."""
     replied = m.reply_to_message
     if not replied or not replied.from_user:
         return
-    # Only fire when the reply is directed at this bot
     bot_id = c.me.id if c.me else None
     if bot_id is None or replied.from_user.id != bot_id:
         return
-    # Don't respond to other bots replying to us
     if m.from_user and m.from_user.is_bot:
         return
 
-    # Try DB first, fall back to in-memory cache
-    msg_text = None
-    try:
-        msg_text = await db.get_random_group_message(m.chat.id)
-    except Exception:
-        pass
-    if not msg_text:
-        msg_text = _random_cached_message(m.chat.id)
-
-    if msg_text:
-        await m.reply_text(msg_text)
+    # Use whatever text/caption they sent; fall back to a nudge if it's media
+    user_text = m.text or m.caption or "(the user sent media without text)"
+    thinking = await m.reply_text("…")
+    ai_reply = await reply_to_user(m.from_user.id, user_text)
+    await thinking.edit_text(ai_reply)
 
 
 @StreamBot.on_message(filters.regex(r'^/ping(@\w+)?(\s|$)'), group=1)

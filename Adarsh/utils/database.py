@@ -76,6 +76,19 @@ class Database:
             return doc.get('text')
         return None
 
+    async def save_user_profile(self, user_id: int, profile: str):
+        """Persist an AI-generated personality profile for a user."""
+        await self.db.user_profiles.update_one(
+            {'id': int(user_id)},
+            {'$set': {'profile': profile}},
+            upsert=True,
+        )
+
+    async def get_user_profile(self, user_id: int) -> str:
+        """Return the stored profile for a user, or empty string if none."""
+        doc = await self.db.user_profiles.find_one({'id': int(user_id)})
+        return doc.get('profile', '') if doc else ''
+
     async def add_file(self, file_info):
         return await self.db.files.insert_one(file_info)
 
