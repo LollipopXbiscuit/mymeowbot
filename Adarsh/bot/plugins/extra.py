@@ -4,7 +4,7 @@ from pyrogram.client import Client
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from Adarsh.bot import StreamBot
 from Adarsh.utils.database import Database
-from Adarsh.utils.ai_memory import observe, build_reply, build_tag, answer_question
+from Adarsh.utils.ai_memory import observe, build_reply, build_tag, answer_question, is_friends_question, list_friends
 from Adarsh.vars import Var
 import time
 import shutil, psutil
@@ -160,7 +160,12 @@ async def echo_bot_reply_handler(c: Client, m: Message):
 
     user_text = (m.text or m.caption or "").strip()
 
-    # Always check memory questions first — they take priority
+    # Friends list question (needs DB — async)
+    if is_friends_question(user_text):
+        await m.reply_text(await list_friends())
+        return
+
+    # Other memory questions (sync, from cache)
     memory_answer = answer_question(m.from_user.id, user_text)
     if memory_answer:
         await m.reply_text(memory_answer)
@@ -190,7 +195,12 @@ async def private_memory_handler(c: Client, m: Message):
         await observe(m.from_user.id, text)
     except Exception:
         pass
-    # Try answering a memory question first
+    # Friends list question (needs DB — async)
+    if is_friends_question(text):
+        await m.reply_text(await list_friends())
+        return
+
+    # Other memory questions (sync, from cache)
     answer = answer_question(m.from_user.id, text)
     if answer:
         await m.reply_text(answer)

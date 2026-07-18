@@ -195,6 +195,44 @@ def _matches(text: str, patterns: list) -> bool:
     return any(re.search(p, t, re.IGNORECASE) for p in patterns)
 
 
+_Q_FRIENDS = [
+    r"دوستات\s*(کی(ا|ن|ان)|چی(ا|ن)|کیا\s*ن|کی\s*هستن)",
+    r"(کیا|کی)\s*(تو\s*)?(حافظه|مموری|ذهن|یادت)\s*(داری|هستن|ات\s*هستن)",
+    r"چند\s*(نفر|تا)\s*(تو\s*)?(حافظه|مموری|ذهنت)\s*(داری|هست)",
+    r"(لیست\s*)?(دوستات|آدمایی\s*(که|رو)\s*(میشناسی|یادته|تو\s*حافظته))",
+    r"کی\s*(رو\s*)?(میشناسی|یادته|یادت\s*هست)",
+    r"who\s*are\s*your\s*friends",
+    r"who\s*do\s*you\s*(know|remember)",
+    r"list\s*(of\s*)?(your\s*)?(friends|people|users)",
+]
+
+
+def is_friends_question(text: str) -> bool:
+    return _matches(text, _Q_FRIENDS)
+
+
+async def list_friends() -> str:
+    """Query DB for all stored memory profiles and return a formatted list."""
+    try:
+        profiles = await _db.get_all_memory_profiles()
+    except Exception as e:
+        return f"نتونستم از DB بخونم 😾 ({e})"
+
+    if not profiles:
+        return "هنوز کسی تو حافظه‌ام ثبت نشده 😾"
+
+    lines = []
+    for p in profiles:
+        uid   = p.get("user_id", "?")
+        name  = p.get("name") or "ناشناس"
+        likes = p.get("likes", [])
+        like_str = f" | دوست داره: {', '.join(likes[:2])}" if likes else ""
+        lines.append(f"• {name} (ID: `{uid}`){like_str}")
+
+    header = f"اینا آدمایی هستن که تو حافظمن ({len(profiles)} نفر) 😾\n\n"
+    return header + "\n".join(lines)
+
+
 def answer_question(user_id: int, text: str) -> str | None:
     """
     Check if the message is a memory question and answer it from the cache.

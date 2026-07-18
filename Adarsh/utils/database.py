@@ -92,6 +92,13 @@ class Database:
             doc.pop('_id', None)
         return doc
 
+    async def get_all_memory_profiles(self) -> list:
+        """Return all stored memory profiles (user_id, name, likes, dislikes)."""
+        profiles = []
+        async for doc in self.db.user_memory.find({}, {'_id': 0, 'word_freq': 0}):
+            profiles.append(doc)
+        return profiles
+
     # ── Allowed groups allowlist ──────────────────────────────────────────────
 
     async def add_allowed_group(self, group_id: int):
