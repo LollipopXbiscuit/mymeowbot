@@ -45,20 +45,8 @@ async def login_handler(c: Client, m: Message):
     except Exception as e:
         print(e)
 
-@StreamBot.on_message((filters.private | filters.group) & (filters.document | filters.video | filters.audio | filters.photo | filters.voice) , group=4)
+@StreamBot.on_message(filters.private & (filters.document | filters.video | filters.audio | filters.photo | filters.voice), group=4)
 async def private_receive_handler(c: Client, m: Message):
-    # Handle /convert command in groups
-    if m.chat.type in ["group", "supergroup"]:
-        # Check if the message itself is /convert or contains it
-        is_convert = False
-        if (m.text and "/convert" in m.text) or (m.caption and "/convert" in m.caption):
-            is_convert = True
-        
-        # If not in message/caption, check if it's a reply and the reply text is /convert
-        if not is_convert and m.reply_to_message:
-             # This is tricky because the handler triggers on the media, not the /convert command message
-             # We actually need a separate handler for the /convert command itself when it's a reply
-             return # Let the command handler handle it if it's a reply
 
     if MY_PASS:
         check_pass = await pass_db.get_user_pass(m.chat.id)
