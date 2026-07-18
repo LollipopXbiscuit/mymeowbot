@@ -76,18 +76,21 @@ class Database:
             return doc.get('text')
         return None
 
-    async def save_user_profile(self, user_id: int, profile: str):
-        """Persist an AI-generated personality profile for a user."""
-        await self.db.user_profiles.update_one(
-            {'id': int(user_id)},
-            {'$set': {'profile': profile}},
+    async def save_user_memory(self, user_id: int, mem: dict):
+        """Persist a user's memory profile (name, likes, dislikes, word_freq)."""
+        payload = {k: v for k, v in mem.items() if k != '_id'}
+        await self.db.user_memory.update_one(
+            {'user_id': int(user_id)},
+            {'$set': payload},
             upsert=True,
         )
 
-    async def get_user_profile(self, user_id: int) -> str:
-        """Return the stored profile for a user, or empty string if none."""
-        doc = await self.db.user_profiles.find_one({'id': int(user_id)})
-        return doc.get('profile', '') if doc else ''
+    async def get_user_memory(self, user_id: int) -> dict | None:
+        """Return stored memory for a user, or None if not found."""
+        doc = await self.db.user_memory.find_one({'user_id': int(user_id)})
+        if doc:
+            doc.pop('_id', None)
+        return doc
 
     async def add_file(self, file_info):
         return await self.db.files.insert_one(file_info)

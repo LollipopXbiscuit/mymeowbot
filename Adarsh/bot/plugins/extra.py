@@ -4,7 +4,7 @@ from pyrogram.client import Client
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from Adarsh.bot import StreamBot
 from Adarsh.utils.database import Database
-from Adarsh.utils.ai_memory import update_user_memory, register_group_message, reply_to_user, personalized_tag
+from Adarsh.utils.ai_memory import observe, build_reply, build_tag
 from Adarsh.vars import Var
 import time
 import shutil, psutil
@@ -70,11 +70,13 @@ async def group_tagger_handler(c: Client, m: Message):
     if not m.from_user or m.from_user.is_bot:
         return
 
-    # Store non-command text and feed into AI memory
+    # Store non-command text and update user memory profile
     if m.text and not m.text.startswith('/') and len(m.text.strip()) > 1:
         _cache_message(m.chat.id, m.text)
-        update_user_memory(m.from_user.id, m.text)      # builds per-user profile
-        register_group_message(m.chat.id, m.text)       # copy-paste pool for replies
+        try:
+            await observe(m.from_user.id, m.text)   # updates name/likes/dislikes/words
+        except Exception:
+            pass
         try:
             await db.add_group_message(m.chat.id, m.text)
         except Exception:
@@ -140,8 +142,7 @@ async def group_tagger_handler(c: Client, m: Message):
         else:
              mention = f"[{random_user.get('first_name', 'User')}](tg://user?id={user_id})"
         
-        # Personalised tag using AI memory — falls back to generic if no profile yet
-        tag_msg = await personalized_tag(user_id, mention)
+        tag_msg = build_tag(user_id, mention)
         await m.reply_text(tag_msg)
 
 @StreamBot.on_message(filters.group & filters.reply, group=1)
@@ -157,10 +158,9 @@ async def echo_bot_reply_handler(c: Client, m: Message):
         return
 
     # Use whatever text/caption they sent; fall back to a nudge if it's media
-    user_text = m.text or m.caption or "(the user sent media without text)"
-    thinking = await m.reply_text("ugh you're talking to me again 😾")
-    ai_reply = await reply_to_user(m.from_user.id, user_text, m.chat.id)
-    await thinking.edit_text(ai_reply)
+    user_text = m.text or m.caption or ""
+    reply = build_reply(m.from_user.id, user_text)
+    await m.reply_text(reply)
 
 
 @StreamBot.on_message(filters.regex(r'^/ping(@\w+)?(\s|$)'), group=1)
