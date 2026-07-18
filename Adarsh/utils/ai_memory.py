@@ -146,6 +146,121 @@ def top_words(mem: dict, n: int = 5) -> list:
     return [w for w, _ in Counter(mem.get("word_freq", {})).most_common(n)]
 
 
+# ── Question detection & answering ───────────────────────────────────────────
+
+_Q_NAME = [
+    r"اسمم\s*(چیه|چی\s*ه|رو\s*میدونی|یادته|چی\s*بود|چیست)",
+    r"اسم\s*من\s*(چیه|چی\s*ه|رو\s*میدونی|یادته)",
+    r"(میدونی|یادته)\s*(اسمم|اسم\s*من)",
+    r"what[' ]?s?\s*my\s*name",
+    r"what\s+is\s+my\s+name",
+    r"do\s*you\s*know\s*my\s*name",
+    r"remember\s*my\s*name",
+    r"what\s*am\s*i\s*called",
+]
+
+_Q_LIKE = [
+    r"چی\s*(دوست\s*دارم|خوشم\s*میاد)",
+    r"(دوست\s*دارم\s*(چی|چیا)|علایقم\s*(چیه|چیا))",
+    r"(میدونی|یادته)\s*(چی\s*دوست\s*دارم|علایقم)",
+    r"what\s*do\s*i\s*(like|love|enjoy)",
+    r"what\s*are\s*my\s*(likes|interests|favorites)",
+]
+
+_Q_DISLIKE = [
+    r"از\s*چی\s*(بدم\s*میاد|متنفرم|خوشم\s*نمیاد)",
+    r"(میدونی|یادته)\s*(از\s*چی\s*بدم\s*میاد|چی\s*(ازم|منو)\s*اذیت)",
+    r"what\s*do\s*i\s*(hate|dislike|not\s*like)",
+    r"what\s*are\s*my\s*(dislikes|hates)",
+]
+
+_Q_ABOUT = [
+    r"(درباره|راجع\s*به)\s*(من|ازم)\s*(چی\s*میدونی|چی\s*یادته|چیا\s*بلدی)",
+    r"منو\s*(میشناسی|یادته|یادت\s*میاد)",
+    r"چی\s*(ازم|از\s*من)\s*(یادته|میدونی|بلدی)",
+    r"what\s*do\s*you\s*know\s*about\s*me",
+    r"do\s*you\s*(know|remember)\s*me",
+    r"tell\s*me\s*what\s*you\s*know\s*about\s*me",
+]
+
+_Q_WORDS = [
+    r"(پرتکرارترین|بیشترین)\s*(کلمه|کلمات|واژه)\s*(من|هام|هایم)",
+    r"(most\s*used|frequent)\s*words?",
+    r"what\s*words?\s*do\s*i\s*(use|say)\s*(most|a\s*lot)",
+]
+
+
+def _matches(text: str, patterns: list) -> bool:
+    t = text.lower().strip()
+    return any(re.search(p, t, re.IGNORECASE) for p in patterns)
+
+
+def answer_question(user_id: int, text: str) -> str | None:
+    """
+    Check if the message is a memory question and answer it from the cache.
+    Returns a reply string, or None if it's not a recognisable question.
+    """
+    mem = _cache.get(user_id, {})
+    name     = mem.get("name")
+    likes    = mem.get("likes", [])
+    dislikes = mem.get("dislikes", [])
+    words    = top_words(mem, 5)
+
+    if _matches(text, _Q_NAME):
+        if name:
+            return random.choice([
+                f"اسمت {name}ه 😾 فکر کردی فراموش کردم؟",
+                f"tch~ {name}. معلومه دیگه 😾",
+                f"your name is {name} — یادمه، نگران نباش 😾",
+            ])
+        return random.choice([
+            "اسمتو بهم نگفتی که 😾 بگو تا یادم بمونه",
+            "هنوز اسمتو ندونم 😾 بگو دیگه",
+            "نگفتی اسمت چیه — بگو: «اسمم ... هست» 😾",
+        ])
+
+    if _matches(text, _Q_LIKE):
+        if likes:
+            listed = "، ".join(likes[:5])
+            return random.choice([
+                f"یادمه که دوست داری: {listed} 😾",
+                f"tch~ اینا رو دوست داری: {listed}",
+                f"علایقت: {listed} — یادم مونده 😾",
+            ])
+        return "هنوز نگفتی چی دوست داری 😾 بگو «دوست دارم ...»"
+
+    if _matches(text, _Q_DISLIKE):
+        if dislikes:
+            listed = "، ".join(dislikes[:5])
+            return random.choice([
+                f"از اینا بدت میاد: {listed} 😾",
+                f"tch~ گفتی از اینا متنفری: {listed}",
+                f"دیسلایکات: {listed} — آره یادمه 😾",
+            ])
+        return "نگفتی از چی بدت میاد 😾 بگو «از ... متنفرم»"
+
+    if _matches(text, _Q_ABOUT):
+        parts = []
+        if name:
+            parts.append(f"اسمت: {name}")
+        if likes:
+            parts.append(f"دوست داری: {', '.join(likes[:3])}")
+        if dislikes:
+            parts.append(f"بدت میاد از: {', '.join(dislikes[:3])}")
+        if words:
+            parts.append(f"پرتکرارترین کلماتت: {', '.join(words)}")
+        if parts:
+            return "اینا رو ازت یادمه 😾\n" + "\n".join(f"• {p}" for p in parts)
+        return "هنوز چیزی ازت یادم نگرفتم 😾 بیشتر حرف بزن"
+
+    if _matches(text, _Q_WORDS):
+        if words:
+            return f"پرتکرارترین کلماتی که میگی: {', '.join(words)} 😾"
+        return "هنوز کافی حرف نزدی که بفهمم 😾"
+
+    return None
+
+
 # ── Template-based reply builder ──────────────────────────────────────────────
 
 _GREET_NAME = [

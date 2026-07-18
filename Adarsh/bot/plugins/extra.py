@@ -4,7 +4,7 @@ from pyrogram.client import Client
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from Adarsh.bot import StreamBot
 from Adarsh.utils.database import Database
-from Adarsh.utils.ai_memory import observe, build_reply, build_tag
+from Adarsh.utils.ai_memory import observe, build_reply, build_tag, answer_question
 from Adarsh.vars import Var
 import time
 import shutil, psutil
@@ -158,17 +158,44 @@ async def echo_bot_reply_handler(c: Client, m: Message):
     if m.from_user and m.from_user.is_bot:
         return
 
+    user_text = (m.text or m.caption or "").strip()
+
+    # Always check memory questions first — they take priority
+    memory_answer = answer_question(m.from_user.id, user_text)
+    if memory_answer:
+        await m.reply_text(memory_answer)
+        return
+
     # 70 % chance: copy-paste a random past member message verbatim
     pool = _group_msg_cache.get(m.chat.id, [])
     if pool and random.random() < 0.70:
-        # Pick from the pool but avoid repeating what the user just said
-        user_text = (m.text or m.caption or "").strip()
         candidates = [msg for msg in pool if msg.strip() != user_text]
         chosen = random.choice(candidates) if candidates else random.choice(pool)
         await m.reply_text(chosen)
     else:
-        user_text = m.text or m.caption or ""
         await m.reply_text(build_reply(m.from_user.id, user_text))
+
+
+@StreamBot.on_message(filters.private & filters.text & ~filters.command([
+    "start", "help", "about", "stats", "users", "broadcast", "login",
+    "allow", "disallow", "allowedgroups"
+]), group=2)
+async def private_memory_handler(c: Client, m: Message):
+    """Answer memory questions and respond to any text in private chat."""
+    if not m.from_user or m.from_user.is_bot:
+        return
+    text = m.text or ""
+    # Feed message into memory
+    try:
+        await observe(m.from_user.id, text)
+    except Exception:
+        pass
+    # Try answering a memory question first
+    answer = answer_question(m.from_user.id, text)
+    if answer:
+        await m.reply_text(answer)
+    else:
+        await m.reply_text(build_reply(m.from_user.id, text))
 
 
 @StreamBot.on_message(filters.regex(r'^/ping(@\w+)?(\s|$)'), group=1)
