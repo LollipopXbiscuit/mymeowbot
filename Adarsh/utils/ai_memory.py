@@ -1,9 +1,10 @@
-# user_memory.py — simple rule-based memory: no AI, no API keys needed.
-# Tracks name / likes / dislikes / most-used words per user_id.
+# ai_memory.py — advanced rule-based memory system (no external AI)
+# Tracks: name / likes / dislikes / mood / topics / message count / last quote
 
 import re
 import random
 import logging
+import time
 from collections import Counter
 
 from Adarsh.vars import Var
@@ -16,82 +17,123 @@ _db = Database(Var.DATABASE_URL, Var.name)
 # In-memory cache  {user_id: dict}
 _cache: dict[int, dict] = {}
 
-# ── Stop-words (skip when counting frequent words) ───────────────────────────
+# ── Stop-words ────────────────────────────────────────────────────────────────
 _STOPWORDS = {
-    # English
     "the", "a", "an", "is", "it", "i", "my", "me", "and", "or", "in",
     "on", "at", "to", "of", "for", "with", "that", "this", "are", "was",
     "be", "have", "has", "do", "did", "will", "can", "not", "but", "so",
     "you", "he", "she", "we", "they", "his", "her", "our", "their",
-    # Persian
-    "من", "تو", "او", "ما", "که", "را", "به", "در", "از", "با", "این",
-    "آن", "هم", "هر", "یک", "ی", "می", "هست", "است", "بود", "هستم",
-    "هستی", "شد", "شده", "داره", "داری", "دارم", "داریم",
+    "\u0645\u0646", "\u062a\u0648", "\u0627\u0648", "\u0645\u0627",
+    "\u06a9\u0647", "\u0631\u0627", "\u0628\u0647", "\u062f\u0631",
+    "\u0627\u0632", "\u0628\u0627", "\u0627\u06cc\u0646", "\u0622\u0646",
+    "\u0647\u0645", "\u0647\u0631", "\u06cc\u06a9", "\u06cc",
+    "\u0645\u06cc", "\u0647\u0633\u062a", "\u0627\u0633\u062a",
+    "\u0628\u0648\u062f", "\u0647\u0633\u062a\u0645",
+    "\u0647\u0633\u062a\u06cc", "\u0634\u062f", "\u0634\u062f\u0647",
+    "\u062f\u0627\u0631\u0647", "\u062f\u0627\u0631\u06cc",
+    "\u062f\u0627\u0631\u0645", "\u062f\u0627\u0631\u06cc\u0645",
+}
+
+# ── Topic keywords ─────────────────────────────────────────────────────────────
+_TOPIC_KEYWORDS: dict[str, list[str]] = {
+    "\u0645\u0648\u0633\u06cc\u0642\u06cc": [
+        r"\u0645\u0648\u0633\u06cc\u0642\u06cc|\u0622\u0647\u0646\u06af|\u06af\u06cc\u062a\u0627\u0631|\u067e\u06cc\u0627\u0646\u0648|\u0633\u0627\u0632|music|song|playlist|spotify|rap|pop|rock"
+    ],
+    "\u06af\u06cc\u0645\u06cc\u0646\u06af": [
+        r"\u0628\u0627\u0632\u06cc|\u06af\u06cc\u0645|\u067e\u0644\u06cc\u200c\u0627\u0633\u062a\u06cc\u0634\u0646|ps[45]|xbox|gaming|game|steam|valorant|\u0641\u0648\u0631\u062a\u0646\u0627\u06cc\u062a|minecraft"
+    ],
+    "\u0648\u0631\u0632\u0634": [
+        r"\u0648\u0631\u0632\u0634|\u0641\u0648\u062a\u0628\u0627\u0644|\u0628\u0633\u06a9\u062a\u0628\u0627\u0644|\u062a\u0646\u06cc\u0633|\u0628\u0627\u0634\u06af\u0627\u0647|gym|workout|sport|football|running"
+    ],
+    "\u063a\u0630\u0627": [
+        r"\u063a\u0630\u0627|\u062e\u0648\u0631\u0627\u06a9\u06cc|\u0622\u0634\u067e\u0632\u06cc|\u0631\u0633\u062a\u0648\u0631\u0627\u0646|\u067e\u06cc\u062a\u0632\u0627|food|cook|eat|restaurant|\u0633\u0648\u0634\u06cc"
+    ],
+    "\u062f\u0631\u0633": [
+        r"\u062f\u0631\u0633|\u0645\u062f\u0631\u0633\u0647|\u062f\u0627\u0646\u0634\u06af\u0627\u0647|\u0627\u0645\u062a\u062d\u0627\u0646|\u06a9\u0646\u06a9\u0648\u0631|study|school|university|homework|exam"
+    ],
+    "\u062a\u06a9\u0646\u0648\u0644\u0648\u0698\u06cc": [
+        r"\u062a\u06a9\u0646\u0648\u0644\u0648\u0698\u06cc|\u06af\u0648\u0634\u06cc|\u0644\u067e\u200c\u062a\u0627\u067e|\u06a9\u0627\u0645\u067e\u06cc\u0648\u062a\u0631|\u06a9\u062f\u0646\u0648\u06cc\u0633\u06cc|\u0628\u0631\u0646\u0627\u0645\u0647\u200c\u0646\u0648\u06cc\u0633\u06cc|tech|phone|laptop|coding|python|ai"
+    ],
+    "\u0641\u06cc\u0644\u0645": [
+        r"\u0641\u06cc\u0644\u0645|\u0633\u0631\u06cc\u0627\u0644|\u0633\u06cc\u0646\u0645\u0627|\u0646\u062a\u0641\u0644\u06cc\u06a9\u0633|movie|series|netflix|cinema|anime|cartoon"
+    ],
+    "\u0633\u0641\u0631": [
+        r"\u0633\u0641\u0631|\u0645\u0633\u0627\u0641\u0631\u062a|\u06af\u0631\u062f\u0634|\u06a9\u0634\u0648\u0631|\u0634\u0647\u0631|travel|trip|vacation|abroad"
+    ],
 }
 
 # ── Detection patterns ────────────────────────────────────────────────────────
+
 _NAME_PATTERNS = [
     r"(?:my name is|i'?m called|call me|i am)\s+([A-Za-z\u0600-\u06FF]{2,20})",
-    r"(?:اسمم|اسم من)\s+([A-Za-z\u0600-\u06FF]{2,20})(?:\s*(?:هست|هستش|ه|است|میشه))?",
-    r"(?:منو|مرا)\s+([A-Za-z\u0600-\u06FF]{2,20})\s+(?:صدا کن|بنام|صدا کنی)",
+    r"(?:\u0627\u0633\u0645\u0645|\u0627\u0633\u0645 \u0645\u0646)\s+([A-Za-z\u0600-\u06FF]{2,20})(?:\s*(?:\u0647\u0633\u062a|\u0647\u0633\u062a\u0634|\u0647|\u0627\u0633\u062a|\u0645\u06cc\u0634\u0647))?",
+    r"(?:\u0645\u0646\u0648|\u0645\u0631\u0627)\s+([A-Za-z\u0600-\u06FF]{2,20})\s+(?:\u0635\u062f\u0627 \u06a9\u0646|\u0628\u0646\u0627\u0645|\u0635\u062f\u0627 \u06a9\u0646\u06cc)",
 ]
 
-# Correction patterns — "نه اسمم X هست نه Y"  →  correct name is X
 _NAME_CORRECTION_PATTERNS = [
-    # نه اسمم رضا هست نه ...  /  نه اسم من رضا هست نه ...
-    r"نه[،!\s]*اسم(?:م|\s*من)\s+([A-Za-z\u0600-\u06FF]{2,20})\s+(?:هست|ـه|ه|هستش|ـه)(?:\s+نه)?",
-    # اسمم رضا هست نه X  (without leading نه)
-    r"اسم(?:م|\s*من)\s+([A-Za-z\u0600-\u06FF]{2,20})\s+هست\s+نه",
-    # no my name is X not Y
+    r"\u0646\u0647[،!\s]*\u0627\u0633\u0645(?:\u0645|\s*\u0645\u0646)\s+([A-Za-z\u0600-\u06FF]{2,20})\s+(?:\u0647\u0633\u062a|\u0647|\u0647\u0633\u062a\u0634)(?:\s+\u0646\u0647)?",
+    r"\u0627\u0633\u0645(?:\u0645|\s*\u0645\u0646)\s+([A-Za-z\u0600-\u06FF]{2,20})\s+\u0647\u0633\u062a\s+\u0646\u0647",
     r"no[,!]?\s+my name is\s+([A-Za-z\u0600-\u06FF]{2,20})\s+not",
-    # my name is X not Y
     r"my name is\s+([A-Za-z\u0600-\u06FF]{2,20})\s+not",
 ]
 
-
-def _extract_name_correction(text: str) -> str | None:
-    """Return the corrected name if the message is a name-correction phrase, else None."""
-    for pat in _NAME_CORRECTION_PATTERNS:
-        m = re.search(pat, text, re.IGNORECASE)
-        if m:
-            name = m.group(1).strip().capitalize()
-            if 2 <= len(name) <= 20:
-                return name
-    return None
-
 _LIKE_PATTERNS = [
-    r"(?:i love|i like|i enjoy|i'm into|i adore)\s+(.{2,35}?)(?:\.|!|$|,|\n)",
-    r"(?:دوست دارم|عاشقم|عاشق)\s+(.{2,30}?)(?:\.|!|$|,|\n|رو|را)",
-    r"(.{2,30}?)\s+(?:رو دوست دارم|خوشم میاد|عالیه|بهترینه)",
+    r"(?:i love|i like|i enjoy|i'm into|i adore)\s+(.{2,40}?)(?:\.|!|$|,|\n)",
+    r"(?:\u062f\u0648\u0633\u062a \u062f\u0627\u0631\u0645|\u0639\u0627\u0634\u0642\u0645|\u0639\u0627\u0634\u0642)\s+(.{2,40}?)(?:\.|!|$|,|\n|\u0631\u0648|\u0631\u0627)",
+    r"(.{2,30}?)\s+(?:\u0631\u0648 \u062f\u0648\u0633\u062a \u062f\u0627\u0631\u0645|\u062e\u0648\u0634\u0645 \u0645\u06cc\u0627\u062f|\u0639\u0627\u0644\u06cc\u0647|\u0628\u0647\u062a\u0631\u06cc\u0646\u0647)",
 ]
 
 _DISLIKE_PATTERNS = [
-    r"(?:i hate|i dislike|i don't like|i can't stand)\s+(.{2,35}?)(?:\.|!|$|,|\n)",
-    r"(?:از|ازِ)\s+(.{2,30}?)\s+(?:متنفرم|بدم میاد|خوشم نمیاد|حالم بهم میخوره)",
-    r"(?:بدم میاد از|متنفرم از)\s+(.{2,30}?)(?:\.|!|$|,|\n)",
+    r"(?:i hate|i dislike|i don't like|i can't stand)\s+(.{2,40}?)(?:\.|!|$|,|\n)",
+    r"(?:\u0627\u0632|\u0627\u0632\u0650)\s+(.{2,35}?)\s+(?:\u0645\u062a\u0646\u0641\u0631\u0645|\u0628\u062f\u0645 \u0645\u06cc\u0627\u062f|\u062e\u0648\u0634\u0645 \u0646\u0645\u06cc\u0627\u062f|\u062d\u0627\u0644\u0645 \u0628\u0647\u0645 \u0645\u06cc\u062e\u0648\u0631\u0647)",
+    r"(?:\u0628\u062f\u0645 \u0645\u06cc\u0627\u062f \u0627\u0632|\u0645\u062a\u0646\u0641\u0631\u0645 \u0627\u0632)\s+(.{2,35}?)(?:\.|!|$|,|\n)",
 ]
 
+# Remove from likes + add to dislikes
+_UNLIKE_PATTERNS = [
+    r"(?:\u062f\u06cc\u06af\u0647|\u062f\u06cc\u06af\u0631)\s+(.{2,30}?)\s+(?:\u0631\u0648|\u0631\u0627)\s+\u062f\u0648\u0633\u062a\s+(?:\u0646\u062f\u0627\u0631\u0645|\u0646\u062f\u0627\u0631\u062f)",
+    r"(?:\u062f\u06cc\u06af\u0647|\u062f\u06cc\u06af\u0631)\s+(?:\u0627\u0632\s+)?(.{2,30}?)\s+\u062e\u0648\u0634\u0645\s+\u0646\u0645\u06cc\u0627\u062f",
+    r"i\s+(?:no longer|don'?t|do not)\s+(?:like|love)\s+(.{2,35}?)(?:\.|!|$|,|\n)",
+]
 
-def _extract(text: str, patterns: list) -> list:
-    found = []
-    for pat in patterns:
-        for m in re.finditer(pat, text, re.IGNORECASE):
-            val = m.group(1).strip().strip(".,!?؟ ")
-            if 2 <= len(val) <= 40:
-                found.append(val.lower())
-    return found
+_MOOD_PATTERNS: dict[str, list[str]] = {
+    "\u062e\u0648\u0634\u062d\u0627\u0644": [
+        r"\u062e\u0648\u0634\u062d\u0627\u0644\u0645|\u062d\u0627\u0644\u0645 \u062e\u0648\u0628\u0647|\u0627\u0645\u0631\u0648\u0632 \u062e\u0648\u0628\u0645|\u0639\u0627\u0644\u06cc|\u0634\u0627\u062f\u0645|i'?m happy|feeling good|great day|so happy|\u0627\u0645\u0631\u0648\u0632 \u0639\u0627\u0644\u06cc\u0647|\u062d\u0627\u0644\u0645 \u062e\u06cc\u0644\u06cc \u062e\u0648\u0628\u0647",
+    ],
+    "\u0646\u0627\u0631\u0627\u062d\u062a": [
+        r"\u0646\u0627\u0631\u0627\u062d\u062a\u0645|\u062f\u0644\u0645 \u06af\u0631\u0641\u062a\u0647|\u063a\u0645\u06af\u06cc\u0646\u0645|\u062d\u0627\u0644\u0645 \u062e\u0648\u0628 \u0646\u06cc\u0633\u062a|\u0627\u0641\u0633\u0631\u062f\u0647|i'?m sad|feeling (?:down|low|blue)|i feel bad",
+    ],
+    "\u0639\u0635\u0628\u0627\u0646\u06cc": [
+        r"\u0639\u0635\u0628\u0627\u0646\u06cc\u0645|\u062d\u0631\u0635\u0645 \u06af\u0631\u0641\u062a\u0647|\u0639\u0635\u0628\u06cc\u0645|\u062f\u0627\u0631\u06cc \u062f\u06cc\u0648\u0648\u0646\u0645 \u0645\u06cc\u06a9\u0646\u06cc|i'?m angry|so frustrated|pissed off|\u062d\u0631\u0635\u0645 \u062f\u0631 \u0627\u0648\u0645\u062f",
+    ],
+    "\u0628\u06cc\u200c\u062d\u0648\u0635\u0644\u0647": [
+        r"\u062d\u0648\u0635\u0644\u0645 \u0633\u0631 \u0631\u0641\u062a\u0647|\u06a9\u0633\u0644\u0645|\u0628\u06cc\u200c\u062d\u0648\u0635\u0644\u0647\u200c\u0627\u0645|boring|i'?m bored|nothing to do|\u06a9\u0627\u0631\u06cc \u0646\u062f\u0627\u0631\u0645",
+    ],
+    "\u062e\u0633\u062a\u0647": [
+        r"\u062e\u0633\u062a\u0647\u200c\u0627\u0645|\u062e\u0633\u062a\u0645|\u06a9\u0648\u0641\u062a\u0647\u200c\u0627\u0645|i'?m tired|exhausted|so tired|\u062e\u06cc\u0644\u06cc \u062e\u0633\u062a\u0645",
+    ],
+    "\u0647\u06cc\u062c\u0627\u0646\u200c\u0632\u062f\u0647": [
+        r"\u0647\u06cc\u062c\u0627\u0646 \u0632\u062f\u0645|\u0646\u0645\u06cc\u200c\u062a\u0648\u0646\u0645 \u0635\u0628\u0631 \u06a9\u0646\u0645|so excited|can'?t wait|\u0647\u06cc\u062c\u0627\u0646\u06cc\u0645",
+    ],
+}
 
+_BIRTHDAY_PATTERNS = [
+    r"(?:\u0627\u0645\u0631\u0648\u0632\s+)?\u062a\u0648\u0644\u062f\u0645\u0647|\u062a\u0648\u0644\u062f\u0645\s+(?:\u0627\u0645\u0631\u0648\u0632\u0647|\u0647\u0633\u062a|\u0647\u0633\u062a\u0634)",
+    r"today\s+is\s+my\s+birthday|it'?s\s+my\s+birthday",
+    r"my\s+birthday\s+(is\s+)?today",
+]
 
-# Words that must never be stored as a name (question words, verb endings, etc.)
 _NAME_BLOCKLIST = {
-    # Persian question / filler words
-    "چیه", "چیست", "چی", "چیا", "کیه", "کیست", "کی", "چیو", "چیم",
-    "هست", "هستش", "هستم", "هستی", "ه", "ای", "است", "باشه", "بود",
-    "میشه", "نیست", "نه", "آره", "بله", "اره",
-    # English filler
+    "\u0686\u06cc\u0647", "\u0686\u06cc\u0633\u062a", "\u0686\u06cc", "\u0686\u06cc\u0627",
+    "\u06a9\u06cc\u0647", "\u06a9\u06cc\u0633\u062a", "\u06a9\u06cc", "\u0686\u06cc\u0648", "\u0686\u06cc\u0645",
+    "\u0647\u0633\u062a", "\u0647\u0633\u062a\u0634", "\u0647\u0633\u062a\u0645", "\u0647\u0633\u062a\u06cc",
+    "\u0647", "\u0627\u06cc", "\u0627\u0633\u062a", "\u0628\u0627\u0634\u0647", "\u0628\u0648\u062f",
+    "\u0645\u06cc\u0634\u0647", "\u0646\u06cc\u0633\u062a", "\u0646\u0647", "\u0622\u0631\u0647", "\u0628\u0644\u0647", "\u0627\u0631\u0647",
     "not", "yes", "no", "called", "am", "is", "are", "been",
 }
 
+
+# ── Low-level helpers ─────────────────────────────────────────────────────────
 
 def _extract_name(text: str) -> str | None:
     for pat in _NAME_PATTERNS:
@@ -103,24 +145,101 @@ def _extract_name(text: str) -> str | None:
     return None
 
 
+def _extract_name_correction(text: str) -> str | None:
+    for pat in _NAME_CORRECTION_PATTERNS:
+        m = re.search(pat, text, re.IGNORECASE)
+        if m:
+            name = m.group(1).strip().capitalize()
+            if 2 <= len(name) <= 20:
+                return name
+    return None
+
+
+def _extract(text: str, patterns: list) -> list:
+    """Extract items; split each on standalone و / and / , so multi-item phrases store separately.
+    Only splits on و surrounded by whitespace to avoid chopping inside words like موسیقی."""
+    found = []
+    for pat in patterns:
+        for m in re.finditer(pat, text, re.IGNORECASE):
+            raw = m.group(1).strip().strip(".,!?\u061f ")
+            # Split on whitespace-bounded و, commas, or ' and '
+            for part in re.split(r'\s+\u0648\s+|\s*,\s*|\s+and\s+', raw):
+                part = part.strip().strip(".,!?\u061f ")
+                if 2 <= len(part) <= 35:
+                    found.append(part.lower())
+    return list(dict.fromkeys(found))  # deduplicate, keep order
+
+
+def _detect_mood(text: str) -> str | None:
+    t = text.lower()
+    for mood, pats in _MOOD_PATTERNS.items():
+        for p in pats:
+            if re.search(p, t, re.IGNORECASE):
+                return mood
+    return None
+
+
+def _detect_birthday(text: str) -> bool:
+    return any(re.search(p, text, re.IGNORECASE) for p in _BIRTHDAY_PATTERNS)
+
+
+def _detect_topics(text: str) -> list:
+    found = []
+    t = text.lower()
+    for topic, pats in _TOPIC_KEYWORDS.items():
+        if any(re.search(p, t, re.IGNORECASE) for p in pats):
+            found.append(topic)
+    return found
+
+
 def _count_words(text: str) -> Counter:
     words = re.findall(r"[\w\u0600-\u06FF]{3,}", text.lower())
     return Counter(w for w in words if w not in _STOPWORDS)
 
 
+def _is_quotable(text: str) -> bool:
+    t = text.strip()
+    if len(t) < 15 or t.endswith('\u061f') or t.endswith('?'):
+        return False
+    if re.match(r'^[/!]', t):
+        return False
+    return True
+
+
+def _familiarity(mem: dict) -> str:
+    count = mem.get("msg_count", 0)
+    if count < 10:
+        return "new"
+    if count < 50:
+        return "regular"
+    return "friend"
+
+
 # ── DB helpers ────────────────────────────────────────────────────────────────
 
-async def _load(user_id: int) -> dict:
-    if user_id in _cache:
-        return _cache[user_id]
-    doc = await _db.get_user_memory(user_id)
-    mem = doc if doc else {
+def _empty_profile(user_id: int) -> dict:
+    return {
         "user_id": user_id,
         "name": None,
         "likes": [],
         "dislikes": [],
         "word_freq": {},
+        "mood": None,
+        "mood_ts": None,
+        "msg_count": 0,
+        "last_quote": None,
+        "birthday_mentioned": False,
+        "topics": [],
     }
+
+
+async def _load(user_id: int) -> dict:
+    if user_id in _cache:
+        return _cache[user_id]
+    doc = await _db.get_user_memory(user_id)
+    mem = doc if doc else _empty_profile(user_id)
+    for k, v in _empty_profile(user_id).items():
+        mem.setdefault(k, v)
     _cache[user_id] = mem
     return mem
 
@@ -138,48 +257,68 @@ async def observe(user_id: int, text: str) -> None:
         return
 
     mem = await _load(user_id)
-    changed = False
 
-    # Name correction (overrides whatever was stored before)
+    # Message counter
+    mem["msg_count"] = mem.get("msg_count", 0) + 1
+
+    # Name correction (overrides whatever was stored)
     correction = _extract_name_correction(text)
     if correction:
         old = mem.get("name")
         mem["name"] = correction
-        changed = True
-        logger.info(f"[memory] Corrected name '{old}' → '{correction}' for user {user_id}")
+        logger.info(f"[memory] Corrected name '{old}' \u2192 '{correction}' for user {user_id}")
     elif not mem["name"]:
-        # Normal name detection — only runs if no name is stored yet
         name = _extract_name(text)
         if name:
             mem["name"] = name
-            changed = True
             logger.info(f"[memory] Learned name '{name}' for user {user_id}")
 
-    # Likes
+    # Likes (multi-item split)
     for item in _extract(text, _LIKE_PATTERNS):
         if item not in mem["likes"]:
-            mem["likes"] = (mem["likes"] + [item])[-20:]
-            changed = True
+            mem["likes"] = (mem["likes"] + [item])[-30:]
 
-    # Dislikes
+    # Unlike (remove from likes, add to dislikes)
+    for item in _extract(text, _UNLIKE_PATTERNS):
+        mem["likes"] = [l for l in mem["likes"] if l != item]
+        if item not in mem["dislikes"]:
+            mem["dislikes"] = (mem["dislikes"] + [item])[-30:]
+
+    # Dislikes (multi-item split)
     for item in _extract(text, _DISLIKE_PATTERNS):
         if item not in mem["dislikes"]:
-            mem["dislikes"] = (mem["dislikes"] + [item])[-20:]
-            changed = True
+            mem["dislikes"] = (mem["dislikes"] + [item])[-30:]
 
-    # Word frequency (always update)
+    # Mood
+    mood = _detect_mood(text)
+    if mood:
+        mem["mood"] = mood
+        mem["mood_ts"] = int(time.time())
+        logger.info(f"[memory] Detected mood '{mood}' for user {user_id}")
+
+    # Birthday
+    if _detect_birthday(text):
+        mem["birthday_mentioned"] = True
+
+    # Topics
+    for topic in _detect_topics(text):
+        if topic not in mem.get("topics", []):
+            mem["topics"] = (mem.get("topics", []) + [topic])[-10:]
+
+    # Last notable quote
+    if _is_quotable(text):
+        mem["last_quote"] = text[:120]
+
+    # Word frequency
     freq = mem.get("word_freq", {})
     for word, n in _count_words(text).items():
         freq[word] = freq.get(word, 0) + n
     mem["word_freq"] = dict(Counter(freq).most_common(50))
-    changed = True
 
-    if changed:
-        await _save(user_id, mem)
+    await _save(user_id, mem)
 
 
 async def get_memory(user_id: int) -> dict:
-    """Return the full memory profile for a user."""
     return await _load(user_id)
 
 
@@ -187,12 +326,12 @@ def top_words(mem: dict, n: int = 5) -> list:
     return [w for w, _ in Counter(mem.get("word_freq", {})).most_common(n)]
 
 
-# ── Question detection & answering ───────────────────────────────────────────
+# ── Question detection & answering ────────────────────────────────────────────
 
 _Q_NAME = [
-    r"اسمم\s*(چیه|چی\s*ه|رو\s*میدونی|یادته|چی\s*بود|چیست)",
-    r"اسم\s*من\s*(چیه|چی\s*ه|رو\s*میدونی|یادته)",
-    r"(میدونی|یادته)\s*(اسمم|اسم\s*من)",
+    r"\u0627\u0633\u0645\u0645\s*(\u0686\u06cc\u0647|\u0686\u06cc\s*\u0647|\u0631\u0648\s*\u0645\u06cc\u062f\u0648\u0646\u06cc|\u06cc\u0627\u062f\u062a\u0647|\u0686\u06cc\s*\u0628\u0648\u062f|\u0686\u06cc\u0633\u062a)",
+    r"\u0627\u0633\u0645\s*\u0645\u0646\s*(\u0686\u06cc\u0647|\u0686\u06cc\s*\u0647|\u0631\u0648\s*\u0645\u06cc\u062f\u0648\u0646\u06cc|\u06cc\u0627\u062f\u062a\u0647)",
+    r"(\u0645\u06cc\u062f\u0648\u0646\u06cc|\u06cc\u0627\u062f\u062a\u0647)\s*(\u0627\u0633\u0645\u0645|\u0627\u0633\u0645\s*\u0645\u0646)",
     r"what[' ]?s?\s*my\s*name",
     r"what\s+is\s+my\s+name",
     r"do\s*you\s*know\s*my\s*name",
@@ -201,31 +340,47 @@ _Q_NAME = [
 ]
 
 _Q_LIKE = [
-    r"چی\s*(دوست\s*دارم|خوشم\s*میاد)",
-    r"(دوست\s*دارم\s*(چی|چیا)|علایقم\s*(چیه|چیا))",
-    r"(میدونی|یادته)\s*(چی\s*دوست\s*دارم|علایقم)",
+    r"\u0686\u06cc\s*(\u062f\u0648\u0633\u062a\s*\u062f\u0627\u0631\u0645|\u062e\u0648\u0634\u0645\s*\u0645\u06cc\u0627\u062f)",
+    r"(\u062f\u0648\u0633\u062a\s*\u062f\u0627\u0631\u0645\s*(\u0686\u06cc|\u0686\u06cc\u0627)|\u0639\u0644\u0627\u06cc\u0642\u0645\s*(\u0686\u06cc\u0647|\u0686\u06cc\u0627))",
+    r"(\u0645\u06cc\u062f\u0648\u0646\u06cc|\u06cc\u0627\u062f\u062a\u0647)\s*(\u0686\u06cc\s*\u062f\u0648\u0633\u062a\s*\u062f\u0627\u0631\u0645|\u0639\u0644\u0627\u06cc\u0642\u0645)",
     r"what\s*do\s*i\s*(like|love|enjoy)",
     r"what\s*are\s*my\s*(likes|interests|favorites)",
 ]
 
 _Q_DISLIKE = [
-    r"از\s*چی\s*(بدم\s*میاد|متنفرم|خوشم\s*نمیاد)",
-    r"(میدونی|یادته)\s*(از\s*چی\s*بدم\s*میاد|چی\s*(ازم|منو)\s*اذیت)",
+    r"\u0627\u0632\s*\u0686\u06cc\s*(\u0628\u062f\u0645\s*\u0645\u06cc\u0627\u062f|\u0645\u062a\u0646\u0641\u0631\u0645|\u062e\u0648\u0634\u0645\s*\u0646\u0645\u06cc\u0627\u062f)",
+    r"(\u0645\u06cc\u062f\u0648\u0646\u06cc|\u06cc\u0627\u062f\u062a\u0647)\s*(\u0627\u0632\s*\u0686\u06cc\s*\u0628\u062f\u0645\s*\u0645\u06cc\u0627\u062f|\u0686\u06cc\s*(\u0627\u0632\u0645|\u0645\u0646\u0648)\s*\u0627\u0630\u06cc\u062a)",
     r"what\s*do\s*i\s*(hate|dislike|not\s*like)",
     r"what\s*are\s*my\s*(dislikes|hates)",
 ]
 
+_Q_MOOD = [
+    r"\u062d\u0627\u0644\u0645\s*(\u0686\u0637\u0648\u0631\u0647|\u0686\u0637\u0648\u0631\s*\u0628\u0648\u062f|\u062e\u0648\u0628\u0647|\u0628\u062f\u0647)\s*(\u0628\u0647\s*\u0646\u0638\u0631\u062a)?",
+    r"(\u0641\u06a9\u0631\s*\u0645\u06cc\u06a9\u0646\u06cc|\u062d\u0633\s*\u0645\u06cc\u06a9\u0646\u06cc)\s*(\u062d\u0627\u0644\u0645|\u0631\u0648\u062d\u06cc\u0647\u200c\u0627\u0645)\s*(\u0686\u0637\u0648\u0631\u0647|\u062e\u0648\u0628\u0647|\u0628\u062f\u0647)",
+    r"(\u0645\u06cc\u062f\u0648\u0646\u06cc|\u06cc\u0627\u062f\u062a\u0647)\s*(\u062d\u0627\u0644\u0645|\u0631\u0648\u062d\u06cc\u0647\u200c\u0627\u0645)\s*(\u0686\u0637\u0648\u0631 \u0628\u0648\u062f|\u0686\u0637\u0648\u0631\u0647)",
+    r"what'?s?\s*my\s*(mood|vibe)",
+    r"how\s*(do\s*i\s*seem|am\s*i\s*(feeling|doing))",
+]
+
+_Q_TOPICS = [
+    r"\u0628\u06cc\u0634\u062a\u0631\s*(?:\u062f\u0631\u0628\u0627\u0631\u0647|\u0631\u0627\u062c\u0639\s*\u0628\u0647)\s*\u0686\u06cc\s*(?:\u062d\u0631\u0641\s*\u0632\u062f\u0645|\u0635\u062d\u0628\u062a\s*\u06a9\u0631\u062f\u0645)",
+    r"\u0686\u06cc\s*(?:\u0628\u0627\u0647\u0627\u062a|\u0628\u0627\s*\u062a\u0648)\s*(?:\u062d\u0631\u0641|\u0635\u062d\u0628\u062a)\s*\u0632\u062f\u0645",
+    r"\u0645\u0648\u0636\u0648\u0639\s*\u0645\u0648\u0631\u062f\s*\u0639\u0644\u0627\u0642\u0647",
+    r"what\s*(topics?|subjects?)\s*do\s*i\s*(talk|care)\s*about",
+    r"what\s*are\s*my\s*(interests|topics|hobbies)",
+]
+
 _Q_ABOUT = [
-    r"(درباره|راجع\s*به)\s*(من|ازم)\s*(چی\s*میدونی|چی\s*یادته|چیا\s*بلدی)",
-    r"منو\s*(میشناسی|یادته|یادت\s*میاد)",
-    r"چی\s*(ازم|از\s*من)\s*(یادته|میدونی|بلدی)",
+    r"(\u062f\u0631\u0628\u0627\u0631\u0647|\u0631\u0627\u062c\u0639\s*\u0628\u0647)\s*(\u0645\u0646|\u0627\u0632\u0645)\s*(\u0686\u06cc\s*\u0645\u06cc\u062f\u0648\u0646\u06cc|\u0686\u06cc\s*\u06cc\u0627\u062f\u062a\u0647|\u0686\u06cc\u0627\s*\u0628\u0644\u062f\u06cc)",
+    r"\u0645\u0646\u0648\s*(\u0645\u06cc\u0634\u0646\u0627\u0633\u06cc|\u06cc\u0627\u062f\u062a\u0647|\u06cc\u0627\u062f\u062a \u0645\u06cc\u0627\u062f)",
+    r"\u0686\u06cc\s*(\u0627\u0632\u0645|\u0627\u0632\s*\u0645\u0646)\s*(\u06cc\u0627\u062f\u062a\u0647|\u0645\u06cc\u062f\u0648\u0646\u06cc|\u0628\u0644\u062f\u06cc)",
     r"what\s*do\s*you\s*know\s*about\s*me",
     r"do\s*you\s*(know|remember)\s*me",
     r"tell\s*me\s*what\s*you\s*know\s*about\s*me",
 ]
 
 _Q_WORDS = [
-    r"(پرتکرارترین|بیشترین)\s*(کلمه|کلمات|واژه)\s*(من|هام|هایم)",
+    r"(\u067e\u0631\u062a\u06a9\u0631\u0627\u0631\u062a\u0631\u06cc\u0646|\u0628\u06cc\u0634\u062a\u0631\u06cc\u0646)\s*(\u06a9\u0644\u0645\u0647|\u06a9\u0644\u0645\u0627\u062a|\u0648\u0627\u0698\u0647)\s*(\u0645\u0646|\u0647\u0627\u0645|\u0647\u0627\u06cc\u0645)",
     r"(most\s*used|frequent)\s*words?",
     r"what\s*words?\s*do\s*i\s*(use|say)\s*(most|a\s*lot)",
 ]
@@ -237,11 +392,11 @@ def _matches(text: str, patterns: list) -> bool:
 
 
 _Q_FRIENDS = [
-    r"دوستات\s*(کی(ا|ن|ان)|چی(ا|ن)|کیا\s*ن|کی\s*هستن)",
-    r"(کیا|کی)\s*(تو\s*)?(حافظه|مموری|ذهن|یادت)\s*(داری|هستن|ات\s*هستن)",
-    r"چند\s*(نفر|تا)\s*(تو\s*)?(حافظه|مموری|ذهنت)\s*(داری|هست)",
-    r"(لیست\s*)?(دوستات|آدمایی\s*(که|رو)\s*(میشناسی|یادته|تو\s*حافظته))",
-    r"کی\s*(رو\s*)?(میشناسی|یادته|یادت\s*هست)",
+    r"\u062f\u0648\u0633\u062a\u0627\u062a\s*(\u06a9\u06cc(\u0627|\u0646|\u0627\u0646)|\u0686\u06cc(\u0627|\u0646)|\u06a9\u06cc\u0627\s*\u0646|\u06a9\u06cc\s*\u0647\u0633\u062a\u0646)",
+    r"(\u06a9\u06cc\u0627|\u06a9\u06cc)\s*(\u062a\u0648\s*)?(\u062d\u0627\u0641\u0638\u0647|\u0645\u0645\u0648\u0631\u06cc|\u0630\u0647\u0646|\u06cc\u0627\u062f\u062a)\s*(\u062f\u0627\u0631\u06cc|\u0647\u0633\u062a\u0646|\u0627\u062a\s*\u0647\u0633\u062a\u0646)",
+    r"\u0686\u0646\u062f\s*(\u0646\u0641\u0631|\u062a\u0627)\s*(\u062a\u0648\s*)?(\u062d\u0627\u0641\u0638\u0647|\u0645\u0645\u0648\u0631\u06cc|\u0630\u0647\u0646\u062a)\s*(\u062f\u0627\u0631\u06cc|\u0647\u0633\u062a)",
+    r"(\u0644\u06cc\u0633\u062a\s*)?(\u062f\u0648\u0633\u062a\u0627\u062a|\u0622\u062f\u0645\u0627\u06cc\u06cc\s*(\u06a9\u0647|\u0631\u0648)\s*(\u0645\u06cc\u0634\u0646\u0627\u0633\u06cc|\u06cc\u0627\u062f\u062a\u0647|\u062a\u0648\s*\u062d\u0627\u0641\u0638\u062a\u0647))",
+    r"\u06a9\u06cc\s*(\u0631\u0648\s*)?(\u0645\u06cc\u0634\u0646\u0627\u0633\u06cc|\u06cc\u0627\u062f\u062a\u0647|\u06cc\u0627\u062f\u062a\s*\u0647\u0633\u062a)",
     r"who\s*are\s*your\s*friends",
     r"who\s*do\s*you\s*(know|remember)",
     r"list\s*(of\s*)?(your\s*)?(friends|people|users)",
@@ -253,152 +408,206 @@ def is_friends_question(text: str) -> bool:
 
 
 async def list_friends() -> str:
-    """Query DB for all stored memory profiles and return a formatted list."""
     try:
         profiles = await _db.get_all_memory_profiles()
     except Exception as e:
-        return f"نتونستم از DB بخونم 😾 ({e})"
+        return f"\u0646\u062a\u0648\u0646\u0633\u062a\u0645 \u0627\u0632 DB \u0628\u062e\u0648\u0646\u0645 \U0001f63e ({e})"
 
     if not profiles:
-        return "هنوز کسی تو حافظه‌ام ثبت نشده 😾"
+        return "\u0647\u0646\u0648\u0632 \u06a9\u0633\u06cc \u062a\u0648 \u062d\u0627\u0641\u0638\u0647\u200c\u0627\u0645 \u062b\u0628\u062a \u0646\u0634\u062f\u0647 \U0001f63e"
 
     lines = []
     for p in profiles:
-        uid   = p.get("user_id", "?")
-        name  = p.get("name") or "ناشناس"
-        likes = p.get("likes", [])
-        like_str = f" | دوست داره: {', '.join(likes[:2])}" if likes else ""
-        lines.append(f"• {name} (ID: `{uid}`){like_str}")
+        uid    = p.get("user_id", "?")
+        name   = p.get("name") or "\u0646\u0627\u0634\u0646\u0627\u0633"
+        likes  = p.get("likes", [])
+        mood   = p.get("mood")
+        topics = p.get("topics", [])
+        mood_str  = f" | \u062d\u0627\u0644: {mood}" if mood else ""
+        like_str  = f" | \u062f\u0648\u0633\u062a \u062f\u0627\u0631\u0647: {', '.join(likes[:2])}" if likes else ""
+        topic_str = f" | \u0639\u0644\u0627\u06cc\u0642: {', '.join(topics[:2])}" if topics else ""
+        lines.append(f"\u2022 {name} (ID: `{uid}`){like_str}{mood_str}{topic_str}")
 
-    header = f"اینا آدمایی هستن که تو حافظمن ({len(profiles)} نفر) 😾\n\n"
+    header = f"\u0627\u06cc\u0646\u0627 \u0622\u062f\u0645\u0627\u06cc\u06cc \u0647\u0633\u062a\u0646 \u06a9\u0647 \u062a\u0648 \u062d\u0627\u0641\u0638\u0645\u0646 ({len(profiles)} \u0646\u0641\u0631) \U0001f63e\n\n"
     return header + "\n".join(lines)
 
 
 def answer_question(user_id: int, text: str) -> str | None:
-    """
-    Check if the message is a memory question and answer it from the cache.
-    Returns a reply string, or None if it's not a recognisable question.
-    """
-    mem = _cache.get(user_id, {})
+    mem      = _cache.get(user_id, {})
     name     = mem.get("name")
     likes    = mem.get("likes", [])
     dislikes = mem.get("dislikes", [])
     words    = top_words(mem, 5)
+    mood     = mem.get("mood")
+    topics   = mem.get("topics", [])
 
     if _matches(text, _Q_NAME):
         if name:
             return random.choice([
-                f"اسمت {name}ه 😾 فکر کردی فراموش کردم؟",
-                f"tch~ {name}. معلومه دیگه 😾",
-                f"your name is {name} — یادمه، نگران نباش 😾",
+                f"\u0627\u0633\u0645\u062a {name}\u0647 \U0001f63e \u0641\u06a9\u0631 \u06a9\u0631\u062f\u06cc \u0641\u0631\u0627\u0645\u0648\u0634 \u06a9\u0631\u062f\u0645\u061f",
+                f"tch~ {name}. \u0645\u0639\u0644\u0648\u0645\u0647 \u062f\u06cc\u06af\u0647 \U0001f63e",
+                f"your name is {name} \u2014 \u06cc\u0627\u062f\u0645\u0647\u060c \u0646\u06af\u0631\u0627\u0646 \u0646\u0628\u0627\u0634 \U0001f63e",
+                f"{name}... \u0622\u0631\u0647 \u06cc\u0627\u062f\u0645\u0647 \U0001f63e \u062e\u0648\u0634\u062d\u0627\u0644\u06cc\u061f",
             ])
         return random.choice([
-            "اسمتو بهم نگفتی که 😾 بگو تا یادم بمونه",
-            "هنوز اسمتو ندونم 😾 بگو دیگه",
-            "نگفتی اسمت چیه — بگو: «اسمم ... هست» 😾",
+            "\u0627\u0633\u0645\u062a\u0648 \u0628\u0647\u0645 \u0646\u06af\u0641\u062a\u06cc \u06a9\u0647 \U0001f63e \u0628\u06af\u0648 \u062a\u0627 \u06cc\u0627\u062f\u0645 \u0628\u0645\u0648\u0646\u0647",
+            "\u0647\u0646\u0648\u0632 \u0627\u0633\u0645\u062a\u0648 \u0646\u062f\u0648\u0646\u0645 \U0001f63e \u0628\u06af\u0648 \u062f\u06cc\u06af\u0647",
+            "\u0646\u06af\u0641\u062a\u06cc \u0627\u0633\u0645\u062a \u0686\u06cc\u0647 \u2014 \u0628\u06af\u0648: \u00ab\u0627\u0633\u0645\u0645 ... \u0647\u0633\u062a\u00bb \U0001f63e",
         ])
 
     if _matches(text, _Q_LIKE):
         if likes:
-            listed = "، ".join(likes[:5])
+            listed = "\u060c ".join(likes[:6])
             return random.choice([
-                f"یادمه که دوست داری: {listed} 😾",
-                f"tch~ اینا رو دوست داری: {listed}",
-                f"علایقت: {listed} — یادم مونده 😾",
+                f"\u06cc\u0627\u062f\u0645\u0647 \u06a9\u0647 \u062f\u0648\u0633\u062a \u062f\u0627\u0631\u06cc: {listed} \U0001f63e",
+                f"tch~ \u0627\u06cc\u0646\u0627 \u0631\u0648 \u062f\u0648\u0633\u062a \u062f\u0627\u0631\u06cc: {listed}",
+                f"\u0639\u0644\u0627\u06cc\u0642\u062a: {listed} \u2014 \u06cc\u0627\u062f\u0645 \u0645\u0648\u0646\u062f\u0647 \U0001f63e",
+                f"\u0622\u0631\u0647 \u0622\u0631\u0647\u060c {listed} \u2014 \u0627\u06cc\u0646\u0627 \u0631\u0648 \u062f\u0648\u0633\u062a \u062f\u0627\u0631\u06cc \U0001f63e",
             ])
-        return "هنوز نگفتی چی دوست داری 😾 بگو «دوست دارم ...»"
+        return "\u0647\u0646\u0648\u0632 \u0646\u06af\u0641\u062a\u06cc \u0686\u06cc \u062f\u0648\u0633\u062a \u062f\u0627\u0631\u06cc \U0001f63e \u0628\u06af\u0648 \u00ab\u062f\u0648\u0633\u062a \u062f\u0627\u0631\u0645 ...\u00bb"
 
     if _matches(text, _Q_DISLIKE):
         if dislikes:
-            listed = "، ".join(dislikes[:5])
+            listed = "\u060c ".join(dislikes[:6])
             return random.choice([
-                f"از اینا بدت میاد: {listed} 😾",
-                f"tch~ گفتی از اینا متنفری: {listed}",
-                f"دیسلایکات: {listed} — آره یادمه 😾",
+                f"\u0627\u0632 \u0627\u06cc\u0646\u0627 \u0628\u062f\u062a \u0645\u06cc\u0627\u062f: {listed} \U0001f63e",
+                f"tch~ \u06af\u0641\u062a\u06cc \u0627\u0632 \u0627\u06cc\u0646\u0627 \u0645\u062a\u0646\u0641\u0631\u06cc: {listed}",
+                f"\u062f\u06cc\u0633\u0644\u0627\u06cc\u06a9\u0627\u062a: {listed} \u2014 \u0622\u0631\u0647 \u06cc\u0627\u062f\u0645\u0647 \U0001f63e",
+                f"\u0627\u06cc\u0646\u0627 \u0631\u0648 \u062f\u0648\u0633\u062a \u0646\u062f\u0627\u0631\u06cc: {listed} \u2014 \u062e\u0648\u062f\u062a \u06af\u0641\u062a\u06cc \U0001f63e",
             ])
-        return "نگفتی از چی بدت میاد 😾 بگو «از ... متنفرم»"
+        return "\u0646\u06af\u0641\u062a\u06cc \u0627\u0632 \u0686\u06cc \u0628\u062f\u062a \u0645\u06cc\u0627\u062f \U0001f63e \u0628\u06af\u0648 \u00ab\u0627\u0632 ... \u0645\u062a\u0646\u0641\u0631\u0645\u00bb"
+
+    if _matches(text, _Q_MOOD):
+        if mood:
+            mood_replies = {
+                "\u062e\u0648\u0634\u062d\u0627\u0644":    f"\u0622\u0631\u0647 \u062d\u0633\u062a \u062e\u0648\u0628 \u0628\u0648\u062f \u2014 \u06af\u0641\u062a\u06cc {mood} \U0001f63e",
+                "\u0646\u0627\u0631\u0627\u062d\u062a":    f"\u06af\u0641\u062a\u06cc \u0646\u0627\u0631\u0627\u062d\u062a\u06cc... \u0627\u0645\u06cc\u062f\u0648\u0627\u0631\u0645 \u0628\u0647\u062a\u0631 \u0634\u062f\u0647 \u0628\u0627\u0634\u06cc \U0001f63e",
+                "\u0639\u0635\u0628\u0627\u0646\u06cc":    f"\u06cc\u0627\u062f\u0645\u0647 \u06a9\u0647 \u0639\u0635\u0628\u0627\u0646\u06cc \u0628\u0648\u062f\u06cc \u2014 \u0627\u0644\u0627\u0646 \u0628\u0647\u062a\u0631\u06cc\u061f \U0001f63e",
+                "\u0628\u06cc\u200c\u062d\u0648\u0635\u0644\u0647": f"\u06af\u0641\u062a\u06cc \u0628\u06cc\u200c\u062d\u0648\u0635\u0644\u0647\u200c\u0627\u06cc \U0001f63e \u0628\u0631\u0648 \u06cc\u0647 \u06a9\u0627\u0631 \u0645\u0641\u06cc\u062f \u06a9\u0646",
+                "\u062e\u0633\u062a\u0647":      f"\u06af\u0641\u062a\u06cc \u062e\u0633\u062a\u0647\u200c\u0627\u06cc \U0001f63e \u0627\u0633\u062a\u0631\u0627\u062d\u062a \u06a9\u0631\u062f\u06cc\u061f",
+                "\u0647\u06cc\u062c\u0627\u0646\u200c\u0632\u062f\u0647": f"\u0647\u06cc\u062c\u0627\u0646 \u0632\u062f\u0647 \u0628\u0648\u062f\u06cc \u2014 \u0647\u0646\u0648\u0632\u0645\u061f \U0001f63e",
+            }
+            return mood_replies.get(mood, f"\u0622\u062e\u0631\u06cc\u0646 \u0628\u0627\u0631 \u06af\u0641\u062a\u06cc \u062d\u0627\u0644\u062a {mood} \u0628\u0648\u062f \U0001f63e")
+        return "\u0686\u06cc\u0632 \u062e\u0627\u0635\u06cc \u062f\u0631\u0628\u0627\u0631\u0647 \u062d\u0627\u0644\u062a \u0646\u06af\u0641\u062a\u06cc \u062a\u0627 \u062d\u0627\u0644\u0627 \U0001f63e"
+
+    if _matches(text, _Q_TOPICS):
+        if topics:
+            listed = "\u060c ".join(topics[:5])
+            return f"\u0628\u06cc\u0634\u062a\u0631 \u062f\u0631\u0628\u0627\u0631\u0647 \u0627\u06cc\u0646\u0627 \u062d\u0631\u0641 \u0632\u062f\u06cc: {listed} \U0001f63e"
+        return "\u0647\u0646\u0648\u0632 \u0628\u0647 \u0627\u0646\u062f\u0627\u0632\u0647 \u06a9\u0627\u0641\u06cc \u062d\u0631\u0641 \u0646\u0632\u062f\u06cc \u06a9\u0647 \u0628\u0641\u0647\u0645\u0645 \U0001f63e"
 
     if _matches(text, _Q_ABOUT):
         parts = []
         if name:
-            parts.append(f"اسمت: {name}")
+            parts.append(f"\u0627\u0633\u0645\u062a: {name}")
         if likes:
-            parts.append(f"دوست داری: {', '.join(likes[:3])}")
+            parts.append(f"\u062f\u0648\u0633\u062a \u062f\u0627\u0631\u06cc: {', '.join(likes[:5])}")
         if dislikes:
-            parts.append(f"بدت میاد از: {', '.join(dislikes[:3])}")
+            parts.append(f"\u0628\u062f\u062a \u0645\u06cc\u0627\u062f \u0627\u0632: {', '.join(dislikes[:5])}")
+        if mood:
+            parts.append(f"\u0622\u062e\u0631\u06cc\u0646 \u062d\u0627\u0644\u062a: {mood}")
+        if topics:
+            parts.append(f"\u0645\u0648\u0636\u0648\u0639\u0627\u062a \u0645\u0648\u0631\u062f \u0639\u0644\u0627\u0642\u0647: {', '.join(topics[:4])}")
         if words:
-            parts.append(f"پرتکرارترین کلماتت: {', '.join(words)}")
+            parts.append(f"\u067e\u0631\u062a\u06a9\u0631\u0627\u0631\u062a\u0631\u06cc\u0646 \u06a9\u0644\u0645\u0627\u062a\u062a: {', '.join(words)}")
+        count = mem.get("msg_count", 0)
+        parts.append(f"\u062a\u0639\u062f\u0627\u062f \u067e\u06cc\u0627\u0645\u200c\u0647\u0627\u06cc\u06cc \u06a9\u0647 \u062e\u0648\u0646\u062f\u0645: {count}")
         if parts:
-            return "اینا رو ازت یادمه 😾\n" + "\n".join(f"• {p}" for p in parts)
-        return "هنوز چیزی ازت یادم نگرفتم 😾 بیشتر حرف بزن"
+            return "\u0627\u06cc\u0646\u0627 \u0631\u0648 \u0627\u0632\u062a \u06cc\u0627\u062f\u0645\u0647 \U0001f63e\n" + "\n".join(f"\u2022 {p}" for p in parts)
+        return "\u0647\u0646\u0648\u0632 \u0686\u06cc\u0632\u06cc \u0627\u0632\u062a \u06cc\u0627\u062f\u0645 \u0646\u06af\u0631\u0641\u062a\u0645 \U0001f63e \u0628\u06cc\u0634\u062a\u0631 \u062d\u0631\u0641 \u0628\u0632\u0646"
 
     if _matches(text, _Q_WORDS):
         if words:
-            return f"پرتکرارترین کلماتی که میگی: {', '.join(words)} 😾"
-        return "هنوز کافی حرف نزدی که بفهمم 😾"
+            return f"\u067e\u0631\u062a\u06a9\u0631\u0627\u0631\u062a\u0631\u06cc\u0646 \u06a9\u0644\u0645\u0627\u062a\u06cc \u06a9\u0647 \u0645\u06cc\u06af\u06cc: {', '.join(words)} \U0001f63e"
+        return "\u0647\u0646\u0648\u0632 \u06a9\u0627\u0641\u06cc \u062d\u0631\u0641 \u0646\u0632\u062f\u06cc \u06a9\u0647 \u0628\u0641\u0647\u0645\u0645 \U0001f63e"
 
     return None
 
 
-# ── Template-based reply builder ──────────────────────────────────────────────
+# ── Reply builder ─────────────────────────────────────────────────────────────
 
-_GREET_NAME = [
-    "اوه، {name} اومد 😾",
-    "ها؟ {name} چی میخوای",
-    "tch~ {name}...",
-    "{name} باز اینجایی؟",
-    "اوه {name} دوباره؟ 😾",
-]
-_GREET_ANON = [
-    "ها؟ چی میخوای 😾",
-    "tch~ چیه باز",
-    "بگو چی میخوای",
-    "اومدی چیکار 😾",
-]
+_GREET_NAME = {
+    "new":     ["\u0627\u0648\u0647\u060c {name} \u0627\u0648\u0645\u062f \U0001f63e", "\u0647\u0627\u061f {name} \u0686\u06cc \u0645\u06cc\u062e\u0648\u0627\u06cc", "tch~ {name}..."],
+    "regular": ["{name} \u0628\u0627\u0632 \u0627\u06cc\u0646\u062c\u0627\u06cc\u06cc\u061f", "ohhh {name} \u062f\u0648\u0628\u0627\u0631\u0647 \U0001f63e", "tch~ {name} \u0686\u06cc\u0647\u061f"],
+    "friend":  ["\u062f\u0648\u0628\u0627\u0631\u0647 \u062a\u0648 \U0001f63e {name}\u060c \u0686\u06cc\u0647 \u0628\u0627\u0632\u061f", "\u0622\u0647 {name}... \u062f\u0648\u0628\u0627\u0631\u0647\u061f \U0001f63e", "{name} \u06a9\u0647 \u0645\u06cc\u06af\u0645 \u062f\u0633\u062a \u0628\u0631\u062f\u0627\u0631 \U0001f63e"],
+}
+_GREET_ANON = ["\u0647\u0627\u061f \u0686\u06cc \u0645\u06cc\u062e\u0648\u0627\u06cc \U0001f63e", "tch~ \u0686\u06cc\u0647 \u0628\u0627\u0632", "\u0628\u06af\u0648 \u0686\u06cc \u0645\u06cc\u062e\u0648\u0627\u06cc", "\u0627\u0648\u0645\u062f\u06cc \u0686\u06cc\u06a9\u0627\u0631 \U0001f63e"]
+
+_MOOD_REPLIES: dict[str, list[str]] = {
+    "\u062e\u0648\u0634\u062d\u0627\u0644":    ["\u062e\u0648\u0634\u062d\u0627\u0644\u06cc\u061f \u062a\u0639\u062c\u0628 \u0646\u0645\u06cc\u06a9\u0646\u0645 \U0001f63e", "\u0627\u06cc \u0628\u0627\u0628\u0627 \u062e\u0648\u0634\u062d\u0627\u0644\u06cc \u2014 \u0645\u0646\u0645 \u062e\u0648\u0634\u062d\u0627\u0644\u0645 \u06a9\u0647 \u062e\u0648\u0634\u062d\u0627\u0644\u06cc \U0001f63e"],
+    "\u0646\u0627\u0631\u0627\u062d\u062a":    ["\u0646\u0627\u0631\u0627\u062d\u062a\u06cc\u061f tch~ \u0628\u06af\u0648 \u0686\u062a\u0647 \U0001f63e", "\u0627\u06af\u0647 \u0646\u0627\u0631\u0627\u062d\u062a\u06cc... \u0628\u06af\u0648 \u062f\u06cc\u06af\u0647 \U0001f63e"],
+    "\u0639\u0635\u0628\u0627\u0646\u06cc":    ["\u0639\u0635\u0628\u0627\u0646\u06cc\u061f \u0622\u0631\u0648\u0645 \u0628\u0627\u0634 \U0001f63e", "tch~ \u0627\u0648\u0646 \u0642\u062f\u0631\u0627 \u0647\u0645 \u0628\u062f \u0646\u06cc\u0633\u062a \u0627\u0644\u0627\u0646 \U0001f63e"],
+    "\u0628\u06cc\u200c\u062d\u0648\u0635\u0644\u0647": ["\u0628\u06cc\u200c\u062d\u0648\u0635\u0644\u0647\u200c\u0627\u06cc\u061f \u0645\u0646\u0645 \U0001f63e", "tch~ \u062d\u0648\u0635\u0644\u0647 \u062f\u0627\u0631\u06cc \u0627\u06cc\u0646 \u067e\u06cc\u0627\u0645 \u0631\u0648 \u0628\u0641\u0631\u0633\u062a\u06cc \u0627\u0645\u0627 \u06a9\u0627\u0631 \u0645\u0641\u06cc\u062f \u0646\u0647\u061f \U0001f63e"],
+    "\u062e\u0633\u062a\u0647":      ["\u062e\u0633\u062a\u0647\u200c\u0627\u06cc\u061f \u06cc\u0647 \u06a9\u0645 \u0627\u0633\u062a\u0631\u0627\u062d\u062a \u06a9\u0646 \U0001f63e", "\u0647\u0645\u0647 \u062e\u0633\u062a\u0647\u200c\u0627\u0646 \u062a\u0648 \u06a9\u0647 \u0645\u062e\u0635\u0648\u0635 \u0646\u06cc\u0633\u062a\u06cc \U0001f63e"],
+    "\u0647\u06cc\u062c\u0627\u0646\u200c\u0632\u062f\u0647": ["\u0647\u06cc\u062c\u0627\u0646 \u0632\u062f\u06cc\u061f \u0622\u0631\u0648\u0645 \u0628\u0627\u0634 \U0001f63e", "\u0627\u06cc\u0646\u0642\u062f\u0631 \u0647\u06cc\u062c\u0627\u0646 \u0646\u062f\u0627\u0634\u062a\u0647 \u0628\u0627\u0634 \U0001f63e"],
+}
+
 _LIKE_REPLY = [
-    "اوه پس {item} دوست داری... جالبه 😾",
-    "tch~ {item}؟ انتظار بهتری نداشتم",
-    "خب بیخود دوست داری {item} رو 😾",
+    "\u0627\u0648\u0647 \u067e\u0633 {item} \u062f\u0648\u0633\u062a \u062f\u0627\u0631\u06cc... \u062c\u0627\u0644\u0628\u0647 \U0001f63e",
+    "tch~ {item}\u061f \u0627\u0646\u062a\u0638\u0627\u0631 \u0628\u0647\u062a\u0631\u06cc \u0646\u062f\u0627\u0634\u062a\u0645",
+    "\u062e\u0628 \u0628\u06cc\u062e\u0648\u062f \u062f\u0648\u0633\u062a \u062f\u0627\u0631\u06cc {item} \u0631\u0648 \U0001f63e",
+    "{item}\u061f \u0622\u0631\u0647 \u0628\u062f \u0646\u06cc\u0633\u062a \U0001f63e",
 ]
 _DISLIKE_REPLY = [
-    "از {item} بدت میاد؟ عاقبت یه چیز درستی گفتی 😾",
-    "tch~ {item}؟ منم همینطور 😾",
-    "آره {item} واقعاً مزخرفه 😾",
+    "\u0627\u0632 {item} \u0628\u062f\u062a \u0645\u06cc\u0627\u062f\u061f \u0639\u0627\u0642\u0628\u062a \u06cc\u0647 \u0686\u06cc\u0632 \u062f\u0631\u0633\u062a\u06cc \u06af\u0641\u062a\u06cc \U0001f63e",
+    "tch~ {item}\u061f \u0645\u0646\u0645 \u0647\u0645\u06cc\u0646\u0637\u0648\u0631 \U0001f63e",
+    "\u0622\u0631\u0647 {item} \u0648\u0627\u0642\u0639\u0627\u064b \u0645\u0632\u062e\u0631\u0641\u0647 \U0001f63e",
+]
+_TOPIC_REPLY = [
+    "\u0628\u0627\u0632 \u0631\u0627\u062c\u0639 \u0628\u0647 {topic} \u062d\u0631\u0641 \u0645\u06cc\u0632\u0646\u06cc \U0001f63e",
+    "tch~ {topic} \u062f\u06cc\u06af\u0647... \U0001f63e",
+    "\u0647\u0645\u06cc\u0634\u0647 {topic} {topic} \u0645\u06cc\u06a9\u0646\u06cc \U0001f63e",
 ]
 _WORD_REPLY = [
-    'هنوزم "{word}" میگی؟ 😾',
-    'tch~ "{word}" دیگه چی 😾',
+    "\u0647\u0646\u0648\u0632\u0645 \u00ab{word}\u00bb \u0645\u06cc\u06af\u06cc\u061f \U0001f63e",
+    'tch~ "{word}" \u062f\u06cc\u06af\u0647 \u0686\u06cc \U0001f63e',
 ]
 _GENERIC = [
-    "چیه باز 😾",
-    "tch~ 😾",
-    "هوووف 😾",
-    "خب؟ 😾",
-    "ادامه بده 😾",
-    "بله؟ 😾",
+    "\u0686\u06cc\u0647 \u0628\u0627\u0632 \U0001f63e", "tch~ \U0001f63e", "\u0647\u0648\u0648\u0648\u0641 \U0001f63e",
+    "\u062e\u0628\u061f \U0001f63e", "\u0627\u062f\u0627\u0645\u0647 \u0628\u062f\u0647 \U0001f63e", "\u0628\u0644\u0647\u061f \U0001f63e",
+    "hmm \U0001f63e", "\u0628\u06af\u0648 \U0001f63e",
+]
+_BIRTHDAY_REPLY = [
+    "\u062a\u0648\u0644\u062f\u062a \u0645\u0628\u0627\u0631\u06a9 \U0001f63e \u062e\u0648\u0634\u062d\u0627\u0644\u0645 \u06a9\u0647 \u06af\u0641\u062a\u06cc",
+    "\u062a\u0648\u0644\u062f\u062a \u0645\u0628\u0627\u0631\u06a9\u0647... tch~ \u062e\u0648\u0634 \u0628\u0627\u0634\u06cc \U0001f63e",
+    "\u0627\u0648\u0647 \u062a\u0648\u0644\u062f\u062a\u0647\u061f \U0001f63e \u062e\u0648\u0634\u062d\u0627\u0644 \u0628\u0627\u0634\u06cc",
 ]
 
 
 def build_reply(user_id: int, their_text: str = "") -> str:
-    """Build a personalised reply from stored memory — no API needed."""
-    mem = _cache.get(user_id, {})
-    name    = mem.get("name")
-    likes   = mem.get("likes", [])
+    mem      = _cache.get(user_id, {})
+    name     = mem.get("name")
+    likes    = mem.get("likes", [])
     dislikes = mem.get("dislikes", [])
-    words   = top_words(mem, 5)
+    words    = top_words(mem, 5)
+    mood     = mem.get("mood")
+    topics   = mem.get("topics", [])
+    fam      = _familiarity(mem)
+
+    # Birthday first
+    if _detect_birthday(their_text):
+        return random.choice(_BIRTHDAY_REPLY)
 
     pool = []
 
+    # Mood-aware
+    if mood and random.random() < 0.3:
+        pool += _MOOD_REPLIES.get(mood, [])
+
+    # Familiarity greeting
     if name:
-        pool += [t.format(name=name) for t in _GREET_NAME]
+        pool += [t.format(name=name) for t in _GREET_NAME.get(fam, _GREET_NAME["new"])]
     else:
         pool += _GREET_ANON[:]
 
-    if likes and random.random() < 0.4:
+    if likes and random.random() < 0.35:
         pool.append(random.choice(_LIKE_REPLY).format(item=random.choice(likes)))
 
-    if dislikes and random.random() < 0.4:
+    if dislikes and random.random() < 0.35:
         pool.append(random.choice(_DISLIKE_REPLY).format(item=random.choice(dislikes)))
+
+    if topics and random.random() < 0.25:
+        pool.append(random.choice(_TOPIC_REPLY).format(topic=random.choice(topics)))
 
     if words and their_text:
         for word in words:
@@ -413,31 +622,54 @@ def build_reply(user_id: int, their_text: str = "") -> str:
 # ── Tag builder ───────────────────────────────────────────────────────────────
 
 _TAG_NAME = [
-    "oi {name}! {mention} کجایی؟ 😾",
-    "{name}! {mention} بیا اینجا 🐾",
-    "tch~ {name} {mention} غیبت زده؟ 😾",
-    "{mention} ({name}) شنیدی یا نه؟ 😾",
+    "oi {name}! {mention} \u06a9\u062c\u0627\u06cc\u06cc\u061f \U0001f63e",
+    "{name}! {mention} \u0628\u06cc\u0627 \u0627\u06cc\u0646\u062c\u0627 \U0001f43e",
+    "tch~ {name} {mention} \u063a\u06cc\u0628\u062a \u0632\u062f\u0647\u061f \U0001f63e",
+    "{mention} ({name}) \u0634\u0646\u06cc\u062f\u06cc \u06cc\u0627 \u0646\u0647\u061f \U0001f63e",
 ]
 _TAG_LIKE = [
-    "{mention} برو {item} بخر خودتو مشغول کن 😾",
-    "هی {mention} فکر کردم بری دنبال {item} گم شدی 😾",
+    "{mention} \u0628\u0631\u0648 {item} \u0628\u062e\u0631 \u062e\u0648\u062f\u062a\u0648 \u0645\u0634\u063a\u0648\u0644 \u06a9\u0646 \U0001f63e",
+    "\u0647\u06cc {mention} \u0641\u06a9\u0631 \u06a9\u0631\u062f\u0645 \u0628\u0631\u06cc \u062f\u0646\u0628\u0627\u0644 {item} \u06af\u0645 \u0634\u062f\u06cc \U0001f63e",
 ]
+_TAG_MOOD: dict[str, str] = {
+    "\u0646\u0627\u0631\u0627\u062d\u062a":    "{mention} \u062d\u0627\u0644\u062a \u062e\u0648\u0628\u0647\u061f \U0001f63e",
+    "\u062e\u0633\u062a\u0647":      "{mention} \u0628\u0627\u0632\u0645 \u062e\u0633\u062a\u0647\u200c\u0627\u06cc\u061f \U0001f63e",
+    "\u0628\u06cc\u200c\u062d\u0648\u0635\u0644\u0647": "{mention} \u0628\u06cc\u200c\u062d\u0648\u0635\u0644\u0647 \u0646\u0634\u06cc\u0646 \U0001f63e",
+    "\u0647\u06cc\u062c\u0627\u0646\u200c\u0632\u062f\u0647": "{mention} \u0647\u06cc\u062c\u0627\u0646 \u062f\u0627\u0631\u06cc \u0647\u0646\u0648\u0632\u0645\u061f \U0001f63e",
+}
+_TAG_TOPIC: dict[str, str] = {
+    "\u06af\u06cc\u0645\u06cc\u0646\u06af":   "{mention} \u0628\u0631\u0648 \u06af\u06cc\u0645 \u0628\u0627\u0632\u06cc \u06a9\u0646 \u0628\u062c\u0627\u06cc \u063a\u06cc\u0628 \u0632\u062f\u0646 \U0001f63e",
+    "\u0641\u06cc\u0644\u0645":     "{mention} \u06af\u0648\u0634\u06cc \u062f\u0627\u0631\u06cc \u0633\u0631\u06cc\u0627\u0644 \u0646\u06af\u0627\u0647 \u0645\u06cc\u06a9\u0646\u06cc\u061f \U0001f63e",
+    "\u0645\u0648\u0633\u06cc\u0642\u06cc":  "{mention} \u0628\u0631\u0648 \u0622\u0647\u0646\u06af \u06af\u0648\u0634 \u0628\u062f\u0647 \u0628\u062c\u0627\u06cc \u063a\u06cc\u0628 \u0634\u062f\u0646 \U0001f63e",
+}
 _TAG_GENERIC = [
-    "oi {mention} کجا رفتی؟ 😾",
-    "{mention} شنیدی یا نه؟ 🐾",
-    "tch~ {mention} بیا اینجا 😾",
-    "{mention} مردی؟ 😾",
-    "هی {mention}! 🐾",
+    "oi {mention} \u06a9\u062c\u0627 \u0631\u0641\u062a\u06cc\u061f \U0001f63e",
+    "{mention} \u0634\u0646\u06cc\u062f\u06cc \u06cc\u0627 \u0646\u0647\u061f \U0001f43e",
+    "tch~ {mention} \u0628\u06cc\u0627 \u0627\u06cc\u0646\u062c\u0627 \U0001f63e",
+    "{mention} \u0645\u0631\u062f\u06cc\u061f \U0001f63e",
+    "\u0647\u06cc {mention}! \U0001f43e",
 ]
 
 
 def build_tag(user_id: int, mention: str) -> str:
-    """Build a personalised tag message from stored memory."""
-    mem   = _cache.get(user_id, {})
-    name  = mem.get("name")
-    likes = mem.get("likes", [])
+    mem    = _cache.get(user_id, {})
+    name   = mem.get("name")
+    likes  = mem.get("likes", [])
+    mood   = mem.get("mood")
+    topics = mem.get("topics", [])
 
     pool = []
+
+    # Mood tag
+    if mood and mood in _TAG_MOOD:
+        pool.append(_TAG_MOOD[mood].format(mention=mention))
+
+    # Topic tag
+    if topics:
+        for t in topics:
+            if t in _TAG_TOPIC:
+                pool.append(_TAG_TOPIC[t].format(mention=mention))
+                break
 
     if name:
         pool += [t.format(name=name, mention=mention) for t in _TAG_NAME]
