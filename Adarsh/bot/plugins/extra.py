@@ -138,6 +138,110 @@ async def group_tagger_handler(c: Client, m: Message):
         tag_msg = build_tag(user_id, mention)
         await m.reply_text(tag_msg)
 
+@StreamBot.on_message((filters.group | filters.private) & filters.text & filters.create(lambda _, __, m: bool(m.text and m.text.strip() == "\u0645\u06cc\u0648")))
+async def miyo_handler(c: Client, m: Message):
+    await m.reply_text("\u0628\u0627 \u0645\u0646\u06cc\u061f \U0001f63e")
+
+
+@StreamBot.on_message(filters.group & filters.reply, group=1)
+async def echo_bot_reply_handler(c: Client, m: Message):
+    """When a group member replies to a bot message, repeat a past member message
+    verbatim (70 % of the time) or fall back to a memory-based reply."""
+    replied = m.reply_to_message
+    if not replied or not replied.from_user:
+        return
+    bot_id = c.me.id if c.me else None
+    if bot_id is None or replied.from_user.id != bot_id:
+        return
+    if m.from_user and m.from_user.is_bot:
+        return
+
+    user_text = (m.text or m.caption or "").strip()
+
+    # Friends list question (needs DB — async)
+    if is_friends_question(user_text):
+        await m.reply_text(await list_friends())
+        return
+
+    # Other memory questions (sync, from cache)
+    memory_answer = answer_question(m.from_user.id, user_text)
+    if memory_answer:
+        await m.reply_text(memory_answer)
+        return
+
+    # 70 % chance: copy-paste a random past member message verbatim
+    pool = _group_msg_cache.get(m.chat.id, [])
+    if pool and random.random() < 0.70:
+        candidates = [msg for msg in pool if msg.strip() != user_text]
+        chosen = random.choice(candidates) if candidates else random.choice(pool)
+        await m.reply_text(chosen)
+    else:
+        await m.reply_text(build_reply(m.from_user.id, user_text))
+
+
+@StreamBot.on_message(filters.private & filters.text & ~filters.command([
+    "start", "help", "about", "stats", "users", "broadcast", "login",
+    "allow", "disallow", "allowedgroups"
+]), group=2)
+async def private_memory_handler(c: Client, m: Message):
+    """Answer memory questions and respond to any text in private chat."""
+    if not m.from_user or m.from_user.is_bot:
+        return
+    text = m.text or ""
+    # Feed message into memory
+    try:
+        await observe(m.from_user.id, text)
+    except Exception:
+        pass
+    # Friends list question (needs DB — async)
+    if is_friends_question(text):
+        await m.reply_text(await list_friends())
+        return
+
+    # Other memory questions (sync, from cache)
+    answer = answer_question(m.from_user.id, text)
+    if answer:
+        await m.reply_text(answer)
+    else:
+        await m.reply_text(build_reply(m.from_user.id, text))
+
+
+@StreamBot.on_message(filters.regex(r'^/ping(@\w+)?(\s|$)'), group=1)
+async def ping_handler(bot, m: Message):
+    start = time.time()
+    reply = await m.reply_text("what the hell do you want 😾")
+    elapsed = (time.time() - start) * 1000
+    await reply.edit_text(f"yeah I'm alive, <b>{elapsed:.0f}ms</b>. stop checking on me like I'd ever just disappear on you 😾", parse_mode=enums.ParseMode.HTML)
+
+@StreamBot.on_message(filters.command('stats') & filters.private, group=1)
+async def stats(bot, update):
+  currentTime = readable_time(int(time.time() - StartTime))
+  total, used, free = shutil.disk_usage('.')
+  total = get_readable_file_size(total)
+  used = get_readable_file_size(used)
+  free = get_readable_file_size(free)
+  sent = get_readable_file_size(psutil.net_io_counters().bytes_sent)
+  recv = get_readable_file_size(psutil.net_io_counters().bytes_recv)
+  cpuUsage = psutil.cpu_percent(interval=0.5)
+  memory = psutil.virtual_memory().percent
+  disk = psutil.disk_usage('/').percent
+  botstats = f'<b>Bot Uptime:</b> {currentTime}\n' \
+            f'<b>Total disk space:</b> {total}\n' \
+            f'<b>Used:</b> {used}  ' \
+            f'<b>Free:</b> {free}\n\n' \
+            f'📊Data Usage📊\n<b>Upload:</b> {sent}\n' \
+            f'<b>Down:</b> {recv}\n\n' \
+            f'<b>CPU:</b> {cpuUsage}% ' \
+            f'<b>RAM:</b> {memory}% ' \
+            f'<b>Disk:</b> {disk}%'
+  await update.reply_text(botstats)
+
+
+@StreamBot.on_message((filters.group | filters.private) & filters.text & filters.create(lambda _, __, m: bool(m.text and m.text.strip() == "\u0645\u06cc\u0648")))
+async def miyo_handler(c: Client, m: Message):
+    await m.reply_text("\u0628\u0627 \u0645\u0646\u06cc\u061f \U0001f63e")
+
+
 @StreamBot.on_message(filters.group & filters.reply, group=1)
 async def echo_bot_reply_handler(c: Client, m: Message):
     """When a group member replies to a bot message, repeat a past member message
