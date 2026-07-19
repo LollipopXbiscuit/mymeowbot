@@ -144,9 +144,10 @@ async def miyo_handler(c: Client, m: Message):
     await m.reply_text("\u0628\u0627 \u0645\u0646\u06cc\u061f \U0001f63e")
 
 
-@StreamBot.on_message((filters.group | filters.private) & filters.text & filters.create(
-    lambda _, __, m: bool(m.text and re.match(r'^بگو\s+.+', m.text.strip()))
-), group=0)
+async def _is_bego(_, __, m: Message):
+    return bool(m.text and re.match(r'^بگو\s+.+', m.text.strip()))
+
+@StreamBot.on_message((filters.group | filters.private) & filters.text & filters.create(_is_bego), group=0)
 async def say_for_me_handler(c: Client, m: Message):
     """Delete the user's message and resend just the text after 'بگو'."""
     match = re.match(r'^بگو\s+(.+)', (m.text or "").strip(), re.DOTALL)
