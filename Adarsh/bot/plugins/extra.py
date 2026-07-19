@@ -145,22 +145,32 @@ async def miyo_handler(c: Client, m: Message):
 
 
 async def _is_bego(_, __, m: Message):
-    return bool(m.text and re.match(r'^بگو\s+.+', m.text.strip()))
+    result = bool(m.text and re.match(r'^بگو\s+.+', m.text.strip()))
+    if m.text and 'بگو' in m.text:
+        print(f"[DEBUG _is_bego] text={repr(m.text.strip()[:50])} result={result}")
+    return result
 
 @StreamBot.on_message((filters.group | filters.private) & filters.text & filters.create(_is_bego), group=0)
 async def say_for_me_handler(c: Client, m: Message):
     """Delete the user's message and resend just the text after 'بگو'."""
+    print(f"[DEBUG say_for_me] fired, text={repr((m.text or '')[:60])}")
     match = re.match(r'^بگو\s+(.+)', (m.text or "").strip(), re.DOTALL)
     if not match:
+        print("[DEBUG say_for_me] no match, returning")
         return
     text_to_say = match.group(1).strip()
     if not text_to_say:
         return
     try:
         await m.delete()
-    except Exception:
-        pass
-    await c.send_message(m.chat.id, text_to_say)
+        print("[DEBUG say_for_me] deleted original message")
+    except Exception as e:
+        print(f"[DEBUG say_for_me] delete failed: {e}")
+    try:
+        await c.send_message(m.chat.id, text_to_say)
+        print(f"[DEBUG say_for_me] sent: {repr(text_to_say)}")
+    except Exception as e:
+        print(f"[DEBUG say_for_me] send failed: {e}")
 
 
 @StreamBot.on_message(filters.group & filters.reply, group=1)
