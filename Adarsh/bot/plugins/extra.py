@@ -1,3 +1,4 @@
+import re
 import random
 from pyrogram import filters, enums
 from pyrogram.client import Client
@@ -141,6 +142,24 @@ async def group_tagger_handler(c: Client, m: Message):
 @StreamBot.on_message((filters.group | filters.private) & filters.text & filters.create(lambda _, __, m: bool(m.text and m.text.strip() == "\u0645\u06cc\u0648")))
 async def miyo_handler(c: Client, m: Message):
     await m.reply_text("\u0628\u0627 \u0645\u0646\u06cc\u061f \U0001f63e")
+
+
+@StreamBot.on_message((filters.group | filters.private) & filters.text & filters.create(
+    lambda _, __, m: bool(m.text and re.match(r'^بگو\s+.+', m.text.strip()))
+), group=0)
+async def say_for_me_handler(c: Client, m: Message):
+    """Delete the user's message and resend just the text after 'بگو'."""
+    match = re.match(r'^بگو\s+(.+)', (m.text or "").strip(), re.DOTALL)
+    if not match:
+        return
+    text_to_say = match.group(1).strip()
+    if not text_to_say:
+        return
+    try:
+        await m.delete()
+    except Exception:
+        pass
+    await c.send_message(m.chat.id, text_to_say)
 
 
 @StreamBot.on_message(filters.group & filters.reply, group=1)
