@@ -129,7 +129,7 @@ async def media_streamer(request: web.Request, id: int, secure_hash: str):
         from_bytes = request.http_range.start or 0
         until_bytes = request.http_range.stop or file_size - 1
 
-    req_length = until_bytes - from_bytes
+    req_length = until_bytes - from_bytes + 1
     new_chunk_size = await chunk_size(req_length)
     offset = await offset_fix(from_bytes, new_chunk_size)
     first_part_cut = from_bytes - offset
@@ -158,6 +158,7 @@ async def media_streamer(request: web.Request, id: int, secure_hash: str):
     status = 200
     if range_header:
         status = 206
+        headers["Content-Range"] = f"bytes {from_bytes}-{until_bytes}/{file_size}"
     
     return_resp = web.Response(
         status=status,
@@ -165,7 +166,6 @@ async def media_streamer(request: web.Request, id: int, secure_hash: str):
         headers=headers,
     )
 
-    if return_resp.status == 200:
-        return_resp.headers.add("Content-Length", str(file_size))
+    return_resp.headers.add("Content-Length", str(req_length))
 
     return return_resp
