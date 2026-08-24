@@ -54,7 +54,7 @@ async def dl_handler(request: web.Request):
             return web.Response(text="File not found or expired", status=404)
             
         id = file_data['message_id']
-        return await media_streamer(request, id, secure_hash)
+        return await media_streamer(request, id, secure_hash, filename)
     except Exception as e:
         logging.critical(f"Error in stream handler: {e}")
         return web.Response(text=f"Server Error: {str(e)}", status=500)
@@ -95,7 +95,12 @@ async def stream_handler(request: web.Request):
 
 class_cache = {}
 
-async def media_streamer(request: web.Request, id: int, secure_hash: str):
+async def media_streamer(
+    request: web.Request,
+    id: int,
+    secure_hash: str,
+    requested_filename: str = "",
+):
     range_header = request.headers.get("Range", 0)
     
     index = min(work_loads, key=work_loads.get)
@@ -139,8 +144,13 @@ async def media_streamer(request: web.Request, id: int, secure_hash: str):
         file_id, index, offset, first_part_cut, last_part_cut, part_count, new_chunk_size
     )
 
-    mime_type = file_id.mime_type or mimetypes.guess_type(file_id.file_name)[0] or "application/octet-stream"
-    file_name = file_id.file_name or f"{secrets.token_hex(2)}.file"
+    file_name = file_id.file_name or requested_filename or f"{secrets.token_hex(2)}.file"
+    mime_type = (
+        file_id.mime_type
+        or mimetypes.guess_type(requested_filename)[0]
+        or mimetypes.guess_type(file_name)[0]
+        or "application/octet-stream"
+    )
     
     # Use inline for images and videos to support social media previews
     # Social media bots like Discord/Telegram require the URL to look like a file and the server to return 200 OK with correct MIME
