@@ -22,6 +22,24 @@ logging.getLogger("aiohttp").setLevel(logging.ERROR)
 logging.getLogger("pyrogram").setLevel(logging.ERROR)
 logging.getLogger("aiohttp.web").setLevel(logging.ERROR)
 
+required_config = {
+    "API_ID": Var.API_ID,
+    "API_HASH": Var.API_HASH,
+    "BOT_TOKEN": Var.BOT_TOKEN,
+    "BIN_CHANNEL": Var.BIN_CHANNEL,
+    "DATABASE_URL/MONGODB_URL": Var.DATABASE_URL,
+}
+missing_config = [
+    name for name, value in required_config.items()
+    if not value or value == 0
+]
+if missing_config:
+    raise RuntimeError(
+        "Missing required environment variables: "
+        + ", ".join(missing_config)
+        + ". Add them to Railway Variables before starting the bot."
+    )
+
 ppath = "Adarsh/bot/plugins/*.py"
 files = glob.glob(ppath)
 StreamBot.start()

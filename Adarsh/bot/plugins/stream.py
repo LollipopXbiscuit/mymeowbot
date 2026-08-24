@@ -180,6 +180,24 @@ async def convert_reply_handler(c: Client, m: Message):
     else:
         await m.reply_text("Nyaa~! Master, please reply to a video, image, or file with /convert! 🐾")
 
+@StreamBot.on_message(filters.private & filters.command("link"))
+async def private_link_handler(c: Client, m: Message):
+    """Generate a link when /link is used as a private-chat reply to media."""
+    reply = m.reply_to_message
+    if not reply:
+        await m.reply_text(
+            "Nyaa~! Master, reply to a video, image, or file with /link "
+            "to generate its download link! 🐾"
+        )
+        return
+
+    if reply.document or reply.video or reply.audio or reply.photo or reply.voice:
+        await private_receive_handler(c, reply)
+    else:
+        await m.reply_text(
+            "Nyaa~! Master, please reply to a video, image, or file with /link! 🐾"
+        )
+
 @StreamBot.on_message(filters.channel & ~filters.group & (filters.document | filters.video | filters.photo) & ~filters.forwarded, group=-1)
 async def channel_receive_handler(bot, broadcast):
     if MY_PASS:
