@@ -98,19 +98,30 @@ async def private_receive_handler(c: Client, m: Message):
             return
 
         bin_id = int(str(Var.BIN_CHANNEL))
-        # Resolve the destination first so Pyrogram knows the channel peer.
-        # Do not strip the -100 prefix: that produces an invalid Telegram peer.
+        # Try with and without -100 prefix logic
         try:
-            bin_chat = await c.get_chat(bin_id)
-            log_msg = await m.forward(chat_id=bin_chat.id)
+            log_msg = await m.forward(chat_id=bin_id)
         except Exception as forward_err:
-            print(f"Forwarding failed: {forward_err}")
+            print(f"Forwarding failed with original ID: {forward_err}")
             try:
-                log_msg = await m.copy(chat_id=bin_id)
-            except Exception as copy_err:
-                print(f"Copying failed: {copy_err}")
-                await m.reply_text(f"Nyaa~! Master, I couldn't access the BIN_CHANNEL. Please confirm this bot is an admin in that channel and that BIN_CHANNEL belongs to this bot. 😿\n\nChannel ID: `{bin_id}`\nError: {copy_err}")
-                return
+                # Try stripping -100 if it exists or adding it if it doesn't
+                alt_bin_id = bin_id
+                str_id = str(bin_id)
+                if str_id.startswith("-100"):
+                    alt_bin_id = int(str_id.replace("-100", "-"))
+                elif str_id.startswith("-"):
+                    alt_bin_id = int(str_id.replace("-", "-100"))
+                
+                print(f"Trying alternative ID: {alt_bin_id}")
+                log_msg = await m.forward(chat_id=alt_bin_id)
+            except Exception as alt_forward_err:
+                print(f"Forwarding failed with alt ID: {alt_forward_err}")
+                try:
+                    log_msg = await m.copy(chat_id=bin_id)
+                except Exception as copy_err:
+                    print(f"Copying failed: {copy_err}")
+                    await m.reply_text(f"Nyaa~! Master, I couldn't save the file to the BIN_CHANNEL. Please make sure I am an admin there with permission to post messages! 😿\n\nChannel ID: `{bin_id}`\nError: {copy_err}")
+                    return
             
         file_hash = get_hash(log_msg)
         file_name = get_name(log_msg)
