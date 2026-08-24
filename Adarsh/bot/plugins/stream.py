@@ -172,7 +172,7 @@ async def private_receive_handler(c: Client, m: Message):
         print(f"Error in private_receive_handler: {e}")
         await m.reply_text(f"Nyaa~! Master, I encountered an error: {e} 😿")
 
-@StreamBot.on_message(filters.command("convert") & filters.group & filters.reply)
+@StreamBot.on_message(filters.command(["convert", "link"]) & filters.group & filters.reply)
 async def convert_reply_handler(c: Client, m: Message):
     reply = m.reply_to_message
     if reply.document or reply.video or reply.audio or reply.photo or reply.voice:
