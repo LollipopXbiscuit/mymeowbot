@@ -121,7 +121,18 @@ class Database:
     # ── Files ─────────────────────────────────────────────────────────────────
 
     async def add_file(self, file_info):
-        return await self.db.files.insert_one(file_info)
+        file_hash = file_info.get('file_unique_id')
+        if not file_hash:
+            return await self.db.files.insert_one(file_info)
+        return await self.db.files.update_one(
+            {'file_unique_id': file_hash},
+            {'$set': file_info},
+            upsert=True,
+        )
 
     async def get_file(self, secure_hash):
-        return await self.db.files.find_one({'file_unique_id': secure_hash})
+        # Multiple records may exist from older versions; use the newest one.
+        return await self.db.files.find_one(
+            {'file_unique_id': secure_hash},
+            sort=[('_id', -1)],
+        )
