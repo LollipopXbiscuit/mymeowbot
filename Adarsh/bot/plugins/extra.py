@@ -156,7 +156,12 @@ async def miyo_handler(c: Client, m: Message):
 
 
 
-@StreamBot.on_message(filters.group & filters.reply, group=1)
+@StreamBot.on_message(
+    filters.group
+    & filters.reply
+    & ~filters.command(["link", "convert"]),
+    group=1,
+)
 async def echo_bot_reply_handler(c: Client, m: Message):
     """When a group member replies to a bot message, repeat a past member message
     verbatim (70 % of the time) or fall back to a memory-based reply."""
