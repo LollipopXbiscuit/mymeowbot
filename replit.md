@@ -35,6 +35,7 @@ python -m Adarsh
 - `WORKERS` - Number of workers (default: 4)
 - `PORT` - Web server port (default: 5000)
 - `FQDN` - Fully Qualified Domain Name for file links
+- `RAILWAY_PUBLIC_DOMAIN` - Railway's public service domain; detected automatically when provided
 - `OWNER_ID` - Owner Telegram user IDs (space separated)
 - `UPDATES_CHANNEL` - Updates channel username
 

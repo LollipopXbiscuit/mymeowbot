@@ -102,10 +102,7 @@ async def start(b, m):
         elif get_msg.audio:
             file_name = f"{get_msg.audio.file_name}"
 
-        stream_link = "https://{}/{}".format(Var.FQDN, get_msg.id) if Var.ON_HEROKU or Var.NO_PORT else \
-            "http://{}:{}/{}".format(Var.FQDN,
-                                     Var.PORT,
-                                     get_msg.id)
+        stream_link = "{}{}".format(Var.URL, get_msg.id)
 
         msg_text = "**Nyaa~! Your link is ready, master! 🐾✨\n\n📧 ғɪʟᴇ ɴᴀᴍᴇ :-\n{}\n {}\n\n💌 ᴅᴏᴡɴʟᴏᴀᴅ ʟɪɴᴋ :- {}\n\n♻️ This link is permanent! Nyaa~! ♻️**"
         await m.reply_text(            

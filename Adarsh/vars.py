@@ -29,14 +29,20 @@ class Var(object):
     
     else:
         ON_HEROKU = False
-    # Detect domain automatically from Replit environment
-    REPLIT_DOMAIN = getenv('REPLIT_DEV_DOMAIN') or getenv('REPLIT_DOMAINS')
-    
-    if REPLIT_DOMAIN:
-        FQDN = REPLIT_DOMAIN
+    # Prefer the public hostname supplied by the hosting platform. The bind
+    # address (0.0.0.0) is only for listening and cannot be used in a link.
+    PUBLIC_DOMAIN = (
+        getenv('RAILWAY_PUBLIC_DOMAIN')
+        or getenv('REPLIT_DEV_DOMAIN')
+        or getenv('REPLIT_DOMAINS')
+        or getenv('FQDN')
+    )
+
+    if PUBLIC_DOMAIN:
+        FQDN = PUBLIC_DOMAIN.replace('https://', '').replace('http://', '').rstrip('/')
         URL = "https://{}/".format(FQDN)
     else:
-        FQDN = str(getenv('FQDN', BIND_ADRESS)) if not ON_HEROKU or getenv('FQDN') else APP_NAME+'.herokuapp.com'
+        FQDN = APP_NAME + '.herokuapp.com' if ON_HEROKU else BIND_ADRESS
         HAS_SSL=bool(getenv('HAS_SSL',False))
         if HAS_SSL:
             URL = "https://{}/".format(FQDN)
