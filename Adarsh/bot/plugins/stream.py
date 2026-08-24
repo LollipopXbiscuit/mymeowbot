@@ -172,31 +172,21 @@ async def private_receive_handler(c: Client, m: Message):
         print(f"Error in private_receive_handler: {e}")
         await m.reply_text(f"Nyaa~! Master, I encountered an error: {e} 😿")
 
-@StreamBot.on_message(filters.command(["convert", "link"]) & filters.group & filters.reply)
+@StreamBot.on_message(filters.command(["convert", "link"]) & ~filters.channel & filters.reply)
 async def convert_reply_handler(c: Client, m: Message):
     reply = m.reply_to_message
     if reply.document or reply.video or reply.audio or reply.photo or reply.voice:
         await private_receive_handler(c, reply)
     else:
-        await m.reply_text("Nyaa~! Master, please reply to a video, image, or file with /convert! 🐾")
+        await m.reply_text("Nyaa~! Master, please reply to a video, image, or file with /link! 🐾")
 
-@StreamBot.on_message(filters.private & filters.command("link"))
+@StreamBot.on_message(~filters.channel & filters.command(["convert", "link"]) & ~filters.reply)
 async def private_link_handler(c: Client, m: Message):
-    """Generate a link when /link is used as a private-chat reply to media."""
-    reply = m.reply_to_message
-    if not reply:
-        await m.reply_text(
-            "Nyaa~! Master, reply to a video, image, or file with /link "
-            "to generate its download link! 🐾"
-        )
-        return
-
-    if reply.document or reply.video or reply.audio or reply.photo or reply.voice:
-        await private_receive_handler(c, reply)
-    else:
-        await m.reply_text(
-            "Nyaa~! Master, please reply to a video, image, or file with /link! 🐾"
-        )
+    """Explain how to use /link instead of silently ignoring it."""
+    await m.reply_text(
+        "Nyaa~! Master, reply to a video, image, or file with /link "
+        "to generate its download link! 🐾"
+    )
 
 @StreamBot.on_message(filters.channel & ~filters.group & (filters.document | filters.video | filters.photo) & ~filters.forwarded, group=-1)
 async def channel_receive_handler(bot, broadcast):
