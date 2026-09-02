@@ -57,6 +57,7 @@ _group_gif_cache: dict = {}
 _private_gif_cache: dict = {}
 _MAX_CACHE = 300  # max messages kept per group in memory
 _PRIVATE_GIF_REPLY_PROBABILITY = 0.25
+_REPEAT_MEMBER_MESSAGE_PROBABILITY = 0.70
 
 
 def _cache_message(chat_id: int, text: str):
@@ -241,7 +242,7 @@ async def echo_bot_reply_handler(c: Client, m: Message):
         {"type": "gif", **gif}
         for gif in _group_gif_cache.get(m.chat.id, [])
     )
-    if reply_pool and random.random() < 0.70:
+    if reply_pool and random.random() < _REPEAT_MEMBER_MESSAGE_PROBABILITY:
         candidates = [
             item for item in reply_pool
             if item["type"] == "gif" or item["text"].strip() != user_text

@@ -197,6 +197,22 @@ def _count_words(text: str) -> Counter:
     return Counter(w for w in words if w not in _STOPWORDS)
 
 
+def _extract_emojis(text: str) -> list[str]:
+    return re.findall(r"[\U0001F300-\U0001FAFF\u2600-\u27BF]", text)
+
+
+def _extract_phrases(text: str) -> list[str]:
+    """Return repeated-speech candidates without storing whole messages."""
+    words = re.findall(r"[A-Za-z\u0600-\u06FF]{2,}", text.lower())
+    phrases = []
+    for size in (2, 3):
+        for index in range(len(words) - size + 1):
+            phrase_words = words[index:index + size]
+            if all(word not in _STOPWORDS for word in phrase_words):
+                phrases.append(" ".join(phrase_words))
+    return phrases
+
+
 def _is_quotable(text: str) -> bool:
     t = text.strip()
     if len(t) < 15 or t.endswith('\u061f') or t.endswith('?'):
@@ -215,6 +231,15 @@ def _familiarity(mem: dict) -> str:
     return "friend"
 
 
+def _message_style(mem: dict) -> str:
+    average_length = float(mem.get("avg_msg_length", 0) or 0)
+    if average_length and average_length < 35:
+        return "short"
+    if average_length > 100:
+        return "long"
+    return "balanced"
+
+
 # ── DB helpers ────────────────────────────────────────────────────────────────
 
 def _empty_profile(user_id: int) -> dict:
@@ -230,6 +255,11 @@ def _empty_profile(user_id: int) -> dict:
         "last_quote": None,
         "birthday_mentioned": False,
         "topics": [],
+        "emoji_freq": {},
+        "phrase_freq": {},
+        "avg_msg_length": 0,
+        "question_count": 0,
+        "exclamation_count": 0,
     }
 
 
@@ -258,8 +288,19 @@ async def observe(user_id: int, text: str) -> None:
 
     mem = await _load(user_id)
 
-    # Message counter
-    mem["msg_count"] = mem.get("msg_count", 0) + 1
+    # Message counter and communication style
+    previous_count = mem.get("msg_count", 0)
+    mem["msg_count"] = previous_count + 1
+    message_length = len(text.strip())
+    previous_average = float(mem.get("avg_msg_length", 0) or 0)
+    mem["avg_msg_length"] = round(
+        ((previous_average * previous_count) + message_length) / mem["msg_count"],
+        1,
+    )
+    if "?" in text or "\u061f" in text:
+        mem["question_count"] = mem.get("question_count", 0) + 1
+    if "!" in text:
+        mem["exclamation_count"] = mem.get("exclamation_count", 0) + 1
 
     # Name correction (overrides whatever was stored)
     correction = _extract_name_correction(text)
@@ -314,6 +355,17 @@ async def observe(user_id: int, text: str) -> None:
     for word, n in _count_words(text).items():
         freq[word] = freq.get(word, 0) + n
     mem["word_freq"] = dict(Counter(freq).most_common(50))
+
+    # Emoji and repeated phrase habits
+    emoji_freq = mem.get("emoji_freq", {})
+    for emoji in _extract_emojis(text):
+        emoji_freq[emoji] = emoji_freq.get(emoji, 0) + 1
+    mem["emoji_freq"] = dict(Counter(emoji_freq).most_common(12))
+
+    phrase_freq = mem.get("phrase_freq", {})
+    for phrase in _extract_phrases(text):
+        phrase_freq[phrase] = phrase_freq.get(phrase, 0) + 1
+    mem["phrase_freq"] = dict(Counter(phrase_freq).most_common(20))
 
     await _save(user_id, mem)
 
@@ -440,6 +492,11 @@ def answer_question(user_id: int, text: str) -> str | None:
     words    = top_words(mem, 5)
     mood     = mem.get("mood")
     topics   = mem.get("topics", [])
+    emojis   = list(mem.get("emoji_freq", {}).keys())
+    phrases  = [
+        phrase for phrase, count in mem.get("phrase_freq", {}).items()
+        if count >= 2
+    ]
 
     if _matches(text, _Q_NAME):
         if name:
@@ -510,6 +567,17 @@ def answer_question(user_id: int, text: str) -> str | None:
             parts.append(f"\u0645\u0648\u0636\u0648\u0639\u0627\u062a \u0645\u0648\u0631\u062f \u0639\u0644\u0627\u0642\u0647: {', '.join(topics[:4])}")
         if words:
             parts.append(f"\u067e\u0631\u062a\u06a9\u0631\u0627\u0631\u062a\u0631\u06cc\u0646 \u06a9\u0644\u0645\u0627\u062a\u062a: {', '.join(words)}")
+        if emojis:
+            parts.append(f"\u0627\u06cc\u0645\u0648\u062c\u06cc \u0645\u0648\u0631\u062f \u0639\u0644\u0627\u0642\u0647: {' '.join(emojis[:4])}")
+        if phrases:
+            parts.append(f"\u062a\u06cc\u06a9\u0647\u200c\u06a9\u0644\u0627\u0645\u0647\u0627\u062a: {', '.join(phrases[:3])}")
+        if mem.get("avg_msg_length"):
+            parts.append(f"\u0633\u0628\u06a9 \u067e\u06cc\u0627\u0645\u0647\u0627\u062a: {_message_style(mem)}")
+        if mem.get("question_count") or mem.get("exclamation_count"):
+            parts.append(
+                f"\u0633\u0648\u0627\u0644\u200c\u0647\u0627: {mem.get('question_count', 0)} | "
+                f"\u062a\u0639\u062c\u0628\u200c\u0647\u0627: {mem.get('exclamation_count', 0)}"
+            )
         count = mem.get("msg_count", 0)
         parts.append(f"\u062a\u0639\u062f\u0627\u062f \u067e\u06cc\u0627\u0645\u200c\u0647\u0627\u06cc\u06cc \u06a9\u0647 \u062e\u0648\u0646\u062f\u0645: {count}")
         if parts:
@@ -574,19 +642,76 @@ _BIRTHDAY_REPLY = [
 ]
 
 
+def _personalized_reply_options(mem: dict, their_text: str = "") -> list[str]:
+    """Build reply options from facts and habits learned for this user."""
+    name = mem.get("name") or "\u062f\u0648\u0633\u062a \u0645\u0646"
+    likes = mem.get("likes", [])
+    dislikes = mem.get("dislikes", [])
+    topics = mem.get("topics", [])
+    words = top_words(mem, 5)
+    emojis = list(mem.get("emoji_freq", {}).keys())
+    phrases = [
+        phrase for phrase, count in mem.get("phrase_freq", {}).items()
+        if count >= 2
+    ]
+    style = _message_style(mem)
+    options = []
+
+    if likes:
+        options.extend([
+            f"{name}\u060c \u0628\u0627\u0632 \u062f\u0627\u0631\u06cc \u0633\u0631\u0627\u063a {random.choice(likes)} \u0645\u06cc\u0631\u06cc\u061f \u06cc\u0627\u062f\u0645\u0647 \u062f\u0648\u0633\u062a\u0634 \u062f\u0627\u0631\u06cc \U0001f63e",
+            f"{name}\u060c \u0627\u06cc\u0646\u0645 \u0645\u0648\u0636\u0648\u0639 \u0628\u0647\u062a \u0645\u06cc\u0627\u062f\u061b \u062a\u0648 \u06a9\u0647 \u0628\u0627\u0632\u0645 \u0633\u0631\u0627\u063a\u0634 \u0631\u0641\u062a\u06cc \U0001f63e",
+        ])
+    if dislikes:
+        options.append(
+            f"{name}\u060c \u0645\u06cc\u062f\u0648\u0646\u0645 \u0627\u0632 {random.choice(dislikes)} \u062e\u0648\u0634\u062a \u0646\u0645\u06cc\u0627\u062f\u060c \u0648\u0644\u06cc \u0628\u0627\u0632 \u062d\u0631\u0641\u0634 \u0634\u062f \U0001f63e"
+        )
+    if topics:
+        options.append(
+            f"{name}\u060c \u0628\u0627\u0632 \u0631\u0627\u062c\u0639 \u0628\u0647 {random.choice(topics)} \u062d\u0631\u0641 \u0645\u06cc\u0632\u0646\u06cc\u061b \u0627\u06cc\u0646 \u062f\u06cc\u06af\u0647 \u0639\u0627\u062f\u062a\u062a \u0634\u062f\u0647 \U0001f63e"
+        )
+    if mem.get("mood"):
+        options.append(
+            f"{name}\u060c \u06cc\u0627\u062f\u0645\u0647 \u0622\u062e\u0631\u06cc\u0646 \u0628\u0627\u0631 \u062d\u0627\u0644\u062a {mem['mood']} \u0628\u0648\u062f\u061b \u0627\u0644\u0627\u0646 \u0647\u0645\u0648\u0646\u06cc\u061f \U0001f63e"
+        )
+    if phrases:
+        options.append(
+            f"{name}\u060c \u00ab{random.choice(phrases)}\u00bb \u0647\u0645 \u0628\u0627\u0632 \u0627\u0648\u0645\u062f\u061b \u0627\u06cc\u0646 \u062f\u06cc\u06af\u0647 \u062a\u06cc\u06a9\u0647\u200c\u06a9\u0644\u0627\u0645\u062a\u0647 \U0001f63e"
+        )
+    if emojis:
+        options.append(
+            f"{name}\u060c \u0627\u06cc\u0646 {emojis[0]} \u062f\u06cc\u06af\u0647 \u0627\u0645\u0636\u0627\u06cc \u067e\u06cc\u0627\u0645\u200c\u0647\u0627\u062a\u0647 \U0001f63e"
+        )
+    if style == "short":
+        options.append(f"{name}\u060c \u0645\u062b\u0644 \u0647\u0645\u06cc\u0634\u0647 \u06a9\u0648\u062a\u0627\u0647 \u0648 \u0645\u0641\u06cc\u062f \u06af\u0641\u062a\u06cc \U0001f63e")
+    elif style == "long":
+        options.append(f"{name}\u060c \u0628\u0627\u0632 \u06cc\u0647 \u067e\u06cc\u0627\u0645 \u0645\u0641\u0635\u0644 \u0641\u0631\u0633\u062a\u0627\u062f\u06cc\u061b \u0639\u0627\u062f\u062a\u062a\u0647 \u062f\u06cc\u06af\u0647 \U0001f63e")
+    if their_text and words:
+        for word in words:
+            if word in their_text.lower():
+                options.append(random.choice(_WORD_REPLY).format(word=word))
+                break
+    return options
+
+
 def build_reply(user_id: int, their_text: str = "") -> str:
     mem      = _cache.get(user_id, {})
     name     = mem.get("name")
     likes    = mem.get("likes", [])
     dislikes = mem.get("dislikes", [])
-    words    = top_words(mem, 5)
     mood     = mem.get("mood")
     topics   = mem.get("topics", [])
     fam      = _familiarity(mem)
+    personalized = _personalized_reply_options(mem, their_text)
 
     # Birthday first
     if _detect_birthday(their_text):
         return random.choice(_BIRTHDAY_REPLY)
+
+    # Give learned facts and habits their own random chance before generic
+    # replies, so the bot does not merely mention memory incidentally.
+    if personalized and random.random() < 0.55:
+        return random.choice(personalized)
 
     pool = []
 
@@ -609,12 +734,7 @@ def build_reply(user_id: int, their_text: str = "") -> str:
     if topics and random.random() < 0.25:
         pool.append(random.choice(_TOPIC_REPLY).format(topic=random.choice(topics)))
 
-    if words and their_text:
-        for word in words:
-            if word in their_text.lower():
-                pool.append(random.choice(_WORD_REPLY).format(word=word))
-                break
-
+    pool += personalized
     pool += _GENERIC
     return random.choice(pool)
 
