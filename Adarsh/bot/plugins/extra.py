@@ -52,7 +52,11 @@ message_counters = {}
 _group_msg_cache: dict = {}
 # GIFs are kept separately so other media types never enter the repeat pool.
 _group_gif_cache: dict = {}
+# Private GIFs use their own pool because private text replies have different
+# behavior from group echo replies.
+_private_gif_cache: dict = {}
 _MAX_CACHE = 300  # max messages kept per group in memory
+_PRIVATE_GIF_REPLY_PROBABILITY = 0.25
 
 
 def _cache_message(chat_id: int, text: str):
@@ -77,6 +81,25 @@ def _cache_gif(chat_id: int, file_id: str, caption: str | None = None):
     })
     if len(bucket) > _MAX_CACHE:
         bucket.pop(0)
+
+
+def _random_cached_gif(chat_id: int, exclude_file_id: str | None = None):
+    """Choose a cached GIF, preferring one different from the current GIF."""
+    bucket = _private_gif_cache.get(chat_id, [])
+    if not bucket:
+        return None
+    candidates = [
+        gif for gif in bucket
+        if gif["file_id"] != exclude_file_id
+    ]
+    return random.choice(candidates or bucket)
+
+
+async def _reply_with_gif(message: Message, gif: dict):
+    reply_kwargs = {}
+    if gif["caption"]:
+        reply_kwargs["caption"] = gif["caption"]
+    await message.reply_animation(gif["file_id"], **reply_kwargs)
 
 
 @StreamBot.on_message(filters.group & ~filters.service)
@@ -225,10 +248,7 @@ async def echo_bot_reply_handler(c: Client, m: Message):
         ]
         chosen = random.choice(candidates) if candidates else random.choice(reply_pool)
         if chosen["type"] == "gif":
-            reply_kwargs = {}
-            if chosen["caption"]:
-                reply_kwargs["caption"] = chosen["caption"]
-            await m.reply_animation(chosen["file_id"], **reply_kwargs)
+            await _reply_with_gif(m, chosen)
         else:
             await m.reply_text(chosen["text"])
     else:
@@ -245,16 +265,22 @@ async def private_memory_handler(c: Client, m: Message):
         return
 
     if m.animation and getattr(m.animation, "file_id", None):
+        gif = {
+            "file_id": m.animation.file_id,
+            "caption": (m.caption or "").strip() or None,
+        }
+        bucket = _private_gif_cache.setdefault(m.chat.id, [])
+        bucket.append(gif)
+        if len(bucket) > _MAX_CACHE:
+            bucket.pop(0)
+
         if m.caption:
             try:
                 await observe(m.from_user.id, m.caption)
             except Exception:
                 pass
-        reply_kwargs = {}
-        caption = (m.caption or "").strip()
-        if caption:
-            reply_kwargs["caption"] = caption
-        await m.reply_animation(m.animation.file_id, **reply_kwargs)
+        reply_gif = _random_cached_gif(m.chat.id, exclude_file_id=m.animation.file_id)
+        await _reply_with_gif(m, reply_gif)
         return
 
     text = m.text or ""
@@ -284,6 +310,11 @@ async def private_memory_handler(c: Client, m: Message):
     answer = answer_question(m.from_user.id, text)
     if answer:
         await m.reply_text(answer)
+    elif (
+        _private_gif_cache.get(m.chat.id)
+        and random.random() < _PRIVATE_GIF_REPLY_PROBABILITY
+    ):
+        await _reply_with_gif(m, _random_cached_gif(m.chat.id))
     else:
         await m.reply_text(build_reply(m.from_user.id, text))
 
