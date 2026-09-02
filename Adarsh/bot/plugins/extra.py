@@ -235,14 +235,28 @@ async def echo_bot_reply_handler(c: Client, m: Message):
         await m.reply_text(build_reply(m.from_user.id, user_text))
 
 
-@StreamBot.on_message(filters.private & filters.text & ~filters.command([
+@StreamBot.on_message(filters.private & (filters.text | filters.animation) & ~filters.command([
     "start", "help", "about", "stats", "users", "broadcast", "login",
     "allow", "disallow", "allowedgroups"
 ]), group=2)
 async def private_memory_handler(c: Client, m: Message):
-    """Answer memory questions and respond to any text in private chat."""
+    """Answer private text and echo private GIFs without handling other media."""
     if not m.from_user or m.from_user.is_bot:
         return
+
+    if m.animation and getattr(m.animation, "file_id", None):
+        if m.caption:
+            try:
+                await observe(m.from_user.id, m.caption)
+            except Exception:
+                pass
+        reply_kwargs = {}
+        caption = (m.caption or "").strip()
+        if caption:
+            reply_kwargs["caption"] = caption
+        await m.reply_animation(m.animation.file_id, **reply_kwargs)
+        return
+
     text = m.text or ""
 
     # "بگو X" — delete user's message and repeat X
