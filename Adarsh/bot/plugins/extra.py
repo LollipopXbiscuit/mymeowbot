@@ -50,6 +50,8 @@ message_counters = {}
 
 # In-memory message store per group: {chat_id: [text, ...]} — fallback when DB is unavailable
 _group_msg_cache: dict = {}
+# GIFs are kept separately so other media types never enter the repeat pool.
+_group_gif_cache: dict = {}
 _MAX_CACHE = 300  # max messages kept per group in memory
 
 
@@ -64,6 +66,17 @@ def _cache_message(chat_id: int, text: str):
 def _random_cached_message(chat_id: int):
     bucket = _group_msg_cache.get(chat_id, [])
     return random.choice(bucket) if bucket else None
+
+
+def _cache_gif(chat_id: int, file_id: str, caption: str | None = None):
+    """Store a Telegram animation (GIF) for the group's repeat pool."""
+    bucket = _group_gif_cache.setdefault(chat_id, [])
+    bucket.append({
+        "file_id": file_id,
+        "caption": caption,
+    })
+    if len(bucket) > _MAX_CACHE:
+        bucket.pop(0)
 
 
 @StreamBot.on_message(filters.group & ~filters.service)
@@ -93,6 +106,15 @@ async def group_tagger_handler(c: Client, m: Message):
             await db.add_group_message(m.chat.id, m.text)
         except Exception:
             pass
+
+    # Store GIFs only. Other media types are intentionally ignored by the
+    # learning/repeat feature.
+    if m.animation and getattr(m.animation, "file_id", None):
+        _cache_gif(
+            m.chat.id,
+            m.animation.file_id,
+            (m.caption or "").strip() or None,
+        )
 
     # Track users in the group
     try:
@@ -187,12 +209,28 @@ async def echo_bot_reply_handler(c: Client, m: Message):
         await m.reply_text(memory_answer)
         return
 
-    # 70 % chance: copy-paste a random past member message verbatim
-    pool = _group_msg_cache.get(m.chat.id, [])
-    if pool and random.random() < 0.70:
-        candidates = [msg for msg in pool if msg.strip() != user_text]
-        chosen = random.choice(candidates) if candidates else random.choice(pool)
-        await m.reply_text(chosen)
+    # 70 % chance: copy-paste a random past member message or GIF verbatim.
+    reply_pool = [
+        {"type": "text", "text": text}
+        for text in _group_msg_cache.get(m.chat.id, [])
+    ]
+    reply_pool.extend(
+        {"type": "gif", **gif}
+        for gif in _group_gif_cache.get(m.chat.id, [])
+    )
+    if reply_pool and random.random() < 0.70:
+        candidates = [
+            item for item in reply_pool
+            if item["type"] == "gif" or item["text"].strip() != user_text
+        ]
+        chosen = random.choice(candidates) if candidates else random.choice(reply_pool)
+        if chosen["type"] == "gif":
+            reply_kwargs = {}
+            if chosen["caption"]:
+                reply_kwargs["caption"] = chosen["caption"]
+            await m.reply_animation(chosen["file_id"], **reply_kwargs)
+        else:
+            await m.reply_text(chosen["text"])
     else:
         await m.reply_text(build_reply(m.from_user.id, user_text))
 
